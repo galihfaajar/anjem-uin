@@ -39,22 +39,31 @@ export async function GET(
         : driverInfo.profile
       : null;
 
-    const enrichedOrder = {
-      ...order,
-      driver_name: driverProfile?.full_name || null,
-      driver_phone: driverProfile?.phone || null,
-      driver_plate: driverInfo?.plate_number || null,
-      service_name: Array.isArray(order.service)
-        ? order.service[0]?.name
-        : order.service?.name || null,
-    };
-
     // Fetch order events
     const { data: events } = await supabase
       .from("order_events")
       .select("*")
       .eq("order_id", orderId)
       .order("created_at", { ascending: true });
+
+    let extractedDriverName = driverProfile?.full_name || null;
+    if (!extractedDriverName && events) {
+      const takeEv = events.find((e) => e.status_to === "assigned" && e.notes);
+      if (takeEv) {
+        const match = takeEv.notes.match(/Driver\s+(.+?)\s+\(/);
+        if (match) extractedDriverName = match[1];
+      }
+    }
+
+    const enrichedOrder = {
+      ...order,
+      driver_name: extractedDriverName,
+      driver_phone: driverProfile?.phone || null,
+      driver_plate: driverInfo?.plate_number || null,
+      service_name: Array.isArray(order.service)
+        ? order.service[0]?.name
+        : order.service?.name || null,
+    };
 
     return NextResponse.json({
       order: enrichedOrder,

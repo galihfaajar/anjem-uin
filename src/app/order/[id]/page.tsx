@@ -19,8 +19,9 @@ import {
 } from "lucide-react";
 import { DEMO_ORDERS, DEMO_ORDER_EVENTS } from "@/lib/data/demo";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
-import { buildWALink } from "@/lib/utils";
 import type { Order, OrderEvent, OrderStatus } from "@/types";
+import { createClient } from "@/lib/supabase/client";
+import { buildWALink } from "@/lib/utils";
 
 const statusConfig: Record<
   OrderStatus,
@@ -200,17 +201,51 @@ export default function OrderTrackingPage({
     loadOrder();
   }, [loadOrder]);
 
-  // Auto-refresh every 30 seconds for live orders
+  // Real-time synchronization: Supabase realtime listener + fast poll
   useEffect(() => {
-    if (!isLiveMode) return;
-    if (order?.status === "completed" || order?.status === "cancelled") return;
+    if (!orderId) return;
 
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`order_tracking_realtime_${orderId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `id=eq.${orderId}`,
+        },
+        () => {
+          fetchOrderFromAPI();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "order_events",
+          filter: `order_id=eq.${orderId}`,
+        },
+        () => {
+          fetchOrderFromAPI();
+        }
+      )
+      .subscribe();
+
+    // Fast poll (tiap 3 detik) selama order aktif agar status dan timeline ter-update seketika
     const interval = setInterval(() => {
-      fetchOrderFromAPI();
-    }, 30000);
+      if (order?.status !== "completed" && order?.status !== "cancelled") {
+        fetchOrderFromAPI();
+      }
+    }, 3000);
 
-    return () => clearInterval(interval);
-  }, [isLiveMode, order?.status, fetchOrderFromAPI]);
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [orderId, order?.status, fetchOrderFromAPI]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -344,8 +379,9 @@ export default function OrderTrackingPage({
                   {order.id}
                 </span>
                 {isLiveMode && (
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                    ● Live
+                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full shadow-2xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Realtime Terhubung
                   </span>
                 )}
               </div>
