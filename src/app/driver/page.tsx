@@ -44,10 +44,17 @@ export default function DriverDashboardPage() {
   const [driverRating, setDriverRating] = useState(5.0);
   const [driverTrips, setDriverTrips] = useState(0);
   const [driverStatus, setDriverStatus] = useState<"pending" | "approved" | "blocked">("approved");
+  // Prevent double-click / race on "Ambil Order"
+  const [takingOrderId, setTakingOrderId] = useState<string | null>(null);
+  // Debounce concurrent fetch calls
+  const isFetchingRef = { current: false };
 
   const driverInfoDemo = DEMO_DRIVERS[0];
 
   const fetchLiveData = useCallback(async () => {
+    // Debounce: skip if a fetch is already running
+    if (isFetchingRef.current) return false;
+    isFetchingRef.current = true;
     try {
       // Fetch profile
       const profileRes = await fetch("/api/profile");
@@ -73,10 +80,13 @@ export default function DriverDashboardPage() {
         setPendingOrders(oData.pending || []);
         setMyOrders(oData.mine || []);
         setIsLive(true);
+        isFetchingRef.current = false;
         return true;
       }
     } catch {}
+    isFetchingRef.current = false;
     return false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -98,7 +108,7 @@ export default function DriverDashboardPage() {
     init();
   }, [fetchLiveData]);
 
-  // Real-time synchronization: Supabase realtime channel + backup poll tiap 4 detik
+  // Real-time synchronization: Supabase realtime channel + backup poll tiap 5 detik
   useEffect(() => {
     if (!isLive) return;
 
@@ -113,14 +123,16 @@ export default function DriverDashboardPage() {
           table: "orders",
         },
         () => {
-          fetchLiveData();
+          // Small delay so DB write is committed before we read
+          setTimeout(() => fetchLiveData(), 300);
         }
       )
       .subscribe();
 
+    // Fallback poll every 5s (longer to avoid hammering)
     const interval = setInterval(() => {
       fetchLiveData();
-    }, 4000);
+    }, 5000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -156,6 +168,9 @@ export default function DriverDashboardPage() {
   };
 
   const handleTakeOrder = async (orderId: string) => {
+    // Prevent double-click / re-entrant calls
+    if (takingOrderId !== null) return;
+
     if (!isOnline) {
       showToast("Aktifkan status Online terlebih dahulu.");
       return;
@@ -168,25 +183,30 @@ export default function DriverDashboardPage() {
     }
 
     if (isLive) {
+      setTakingOrderId(orderId); // Lock the button immediately
       try {
         const res = await fetch(`/api/driver/orders/${orderId}/take`, {
           method: "POST",
         });
         const data = await res.json();
         if (res.ok) {
-          await fetchLiveData();
+          // Immediately update local state so UI is snappy, then refresh from server
+          setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
           setActiveTab("active");
-          showToast(`Order ${orderId} berhasil diambil!`);
-          return;
+          showToast(`Order berhasil diambil!`);
+          // Refresh from server after a short delay
+          setTimeout(() => fetchLiveData(), 400);
         } else {
           showToast(data.error || "Gagal mengambil order.");
+          // Refresh to get latest state
           await fetchLiveData();
-          return;
         }
       } catch {
         showToast("Gagal terhubung ke server.");
-        return;
+      } finally {
+        setTakingOrderId(null); // Always unlock
       }
+      return;
     }
 
     // Demo fallback
@@ -469,14 +489,20 @@ export default function DriverDashboardPage() {
 
                         <button
                           onClick={() => handleTakeOrder(ord.id)}
-                          disabled={hasActiveOrder || !isOnline}
+                          disabled={hasActiveOrder || !isOnline || takingOrderId !== null}
                           className={`text-xs py-2 px-4 rounded-xl font-bold transition-all self-end sm:self-center flex items-center gap-1.5 ${
                             hasActiveOrder
                               ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                              : takingOrderId === ord.id
+                              ? "bg-blue-300 text-white border-0 cursor-wait"
                               : "btn btn-primary shadow-sm hover:scale-102 cursor-pointer"
                           }`}
                         >
-                          {hasActiveOrder ? "Selesaikan Order Aktif Dahulu" : "Ambil Order Ini"}
+                          {hasActiveOrder
+                            ? "Selesaikan Order Aktif Dahulu"
+                            : takingOrderId === ord.id
+                            ? "Mengambil..."
+                            : "Ambil Order Ini"}
                         </button>
                       </div>
                     ))
