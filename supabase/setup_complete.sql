@@ -84,7 +84,13 @@ CREATE TABLE IF NOT EXISTS public.orders (
   customer_name TEXT,
   customer_phone TEXT,
   driver_id UUID REFERENCES public.drivers(id),
+  -- Denormalized driver info (diisi saat driver mengambil order)
+  driver_name  TEXT,
+  driver_phone TEXT,
+  driver_plate TEXT,
   service_id TEXT NOT NULL REFERENCES public.services(id),
+  -- Denormalized service name (diisi saat order dibuat)
+  service_name TEXT,
   pickup_name TEXT NOT NULL,
   pickup_lat NUMERIC NOT NULL DEFAULT 0,
   pickup_lng NUMERIC NOT NULL DEFAULT 0,
@@ -104,6 +110,7 @@ CREATE TABLE IF NOT EXISTS public.orders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
 
 -- Tabel order_events
 CREATE TABLE IF NOT EXISTS public.order_events (
