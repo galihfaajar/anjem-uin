@@ -255,7 +255,19 @@ CREATE POLICY "orders_read" ON public.orders FOR SELECT
   );
 CREATE POLICY "orders_update" ON public.orders FOR UPDATE
   USING (
+    -- Driver bisa update order yang sudah miliknya
     driver_id IN (SELECT id FROM public.drivers WHERE profile_id = auth.uid())
+    -- ATAU driver approved bisa mengambil order yang masih pending (driver_id = NULL)
+    OR (
+      driver_id IS NULL
+      AND status = 'pending'
+      AND EXISTS (
+        SELECT 1 FROM public.drivers
+        WHERE profile_id = auth.uid()
+          AND status = 'approved'
+          AND is_online = TRUE
+      )
+    )
     OR public.is_admin()
   );
 
