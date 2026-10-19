@@ -22,23 +22,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Status tidak valid" }, { status: 400 });
     }
 
-    // Get driver's record by profile_id
-    const { data: driverRecord, error: driverErr } = await supabase
-      .from("drivers")
-      .select("id")
-      .eq("profile_id", user.id)
-      .single();
+    // Fetch driver record and order in PARALLEL to reduce latency
+    const [{ data: driverRecord, error: driverErr }, { data: order, error: fetchErr }] = await Promise.all([
+      supabase.from("drivers").select("id").eq("profile_id", user.id).single(),
+      supabase.from("orders").select("status, driver_id").eq("id", orderId).single(),
+    ]);
 
     if (driverErr || !driverRecord) {
       return NextResponse.json({ error: "Akun driver tidak ditemukan" }, { status: 404 });
     }
-
-    // Fetch order to verify driver ownership (using drivers.id)
-    const { data: order, error: fetchErr } = await supabase
-      .from("orders")
-      .select("status, driver_id")
-      .eq("id", orderId)
-      .single();
 
     if (fetchErr || !order) {
       return NextResponse.json({ error: "Order tidak ditemukan" }, { status: 404 });
@@ -48,7 +40,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Bukan order Anda" }, { status: 403 });
     }
 
-    const updatePayload: Record<string, any> = { status };
+    const updatePayload: Record<string, unknown> = { status };
     if (status === "completed") {
       updatePayload.completed_at = new Date().toISOString();
     }
@@ -64,13 +56,15 @@ export async function PATCH(
       return NextResponse.json({ error: updateErr.message }, { status: 500 });
     }
 
-    // Insert order event
-    await supabase.from("order_events").insert({
+    // Insert order event — fire-and-forget, don't block the response
+    supabase.from("order_events").insert({
       order_id: orderId,
       status_from: order.status,
       status_to: status,
       actor_id: user.id,
       notes: notes || `Status diperbarui oleh driver ke: ${status}`,
+    }).then(({ error }) => {
+      if (error) console.error("[status] event insert error:", error);
     });
 
     return NextResponse.json({

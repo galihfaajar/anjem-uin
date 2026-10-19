@@ -11,30 +11,33 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch pending orders (available to take)
-    const { data: pendingOrders, error: pendingErr } = await supabase
-      .from("orders")
-      .select(`
-        *,
-        service:services(name, icon)
-      `)
-      .eq("status", "pending")
-      .is("driver_id", null)
-      .order("created_at", { ascending: false })
-      .limit(20);
+    // Fetch pending orders + driver record in PARALLEL to reduce latency
+    const [
+      { data: pendingOrders, error: pendingErr },
+      { data: driverRecord }
+    ] = await Promise.all([
+      supabase
+        .from("orders")
+        .select(`
+          *,
+          service:services(name, icon)
+        `)
+        .eq("status", "pending")
+        .is("driver_id", null)
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("drivers")
+        .select("id")
+        .eq("profile_id", user.id)
+        .maybeSingle(),
+    ]);
 
     if (pendingErr) {
       return NextResponse.json({ error: pendingErr.message }, { status: 500 });
     }
 
-    // Fetch driver record by profile_id
-    const { data: driverRecord } = await supabase
-      .from("drivers")
-      .select("id")
-      .eq("profile_id", user.id)
-      .single();
-
-    // Fetch driver's own active orders
+    // Fetch driver's own active/recent orders
     let myOrders: any[] = [];
     if (driverRecord) {
       const { data: myOrdersData } = await supabase

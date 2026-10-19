@@ -44,10 +44,10 @@ export default function Navbar() {
   useEffect(() => {
     // Quick load from local cache on client mount (safe from SSR hydration)
     if (typeof window !== "undefined") {
-      const savedRole = localStorage.getItem("anjem_role") || localStorage.getItem("anjem_demo_role");
+      const savedRole = localStorage.getItem("anjem_role");
       if (savedRole) setRole(savedRole as any);
 
-      const savedUser = localStorage.getItem("anjem_user") || localStorage.getItem("anjem_demo_user");
+      const savedUser = localStorage.getItem("anjem_user");
       if (savedUser) {
         try {
           const parsed = JSON.parse(savedUser);
@@ -92,21 +92,8 @@ export default function Navbar() {
         // Fallback silently if offline or network error
       }
 
-      // Check if in demo mode
+      // If no Supabase session, reset
       if (typeof window !== "undefined") {
-        const demoRole = localStorage.getItem("anjem_demo_role") as any;
-        const demoUser = localStorage.getItem("anjem_demo_user");
-        if (demoRole) {
-          setRole(demoRole);
-          if (demoUser) {
-            try {
-              const parsed = JSON.parse(demoUser);
-              if (parsed.name) setUserName(parsed.name);
-            } catch {}
-          }
-          return;
-        }
-        // If no Supabase session and no demo, reset
         const hasSavedRole = localStorage.getItem("anjem_role");
         if (!hasSavedRole) {
           setRole(null);
@@ -127,8 +114,6 @@ export default function Navbar() {
         if (typeof window !== "undefined") {
           localStorage.removeItem("anjem_role");
           localStorage.removeItem("anjem_user");
-          localStorage.removeItem("anjem_demo_role");
-          localStorage.removeItem("anjem_demo_user");
         }
       }
     });
@@ -184,8 +169,6 @@ export default function Navbar() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("anjem_role");
       localStorage.removeItem("anjem_user");
-      localStorage.removeItem("anjem_demo_role");
-      localStorage.removeItem("anjem_demo_user");
     }
 
     setRole(null);

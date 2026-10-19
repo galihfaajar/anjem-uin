@@ -80,7 +80,7 @@ export const siteConfig: SiteConfig = {
   },
 
   // --- Mode Demo ---
-  isDemoMode: true, // set false ketika sudah operasional dengan data nyata
+  isDemoMode: false, // data nyata dari database Supabase
 
   // --- Default koordinat tengah peta ---
   mapCenter: {

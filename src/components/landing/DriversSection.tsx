@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Star, Bike, ArrowRight } from "lucide-react";
-import { DEMO_DRIVERS } from "@/lib/data/demo";
+import { createClient } from "@/lib/supabase/server";
 
 function StarRating({ rating }: { rating: number }) {
   return (
@@ -17,8 +17,27 @@ function StarRating({ rating }: { rating: number }) {
   );
 }
 
-export default function DriversSection() {
-  const drivers = DEMO_DRIVERS.filter((d) => d.status === "approved");
+export default async function DriversSection() {
+  let drivers: any[] = [];
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("drivers")
+      .select("*, profile:profiles(full_name, avatar_url)")
+      .eq("status", "approved")
+      .order("rating_avg", { ascending: false });
+
+    if (data && data.length > 0) {
+      drivers = data.map((d: any) => ({
+        ...d,
+        initials: (d.profile?.full_name || "Driver")
+          .split(" ")
+          .map((n: string) => n[0])
+          .slice(0, 2)
+          .join(""),
+      }));
+    }
+  } catch {}
 
   if (drivers.length === 0) {
     return (
@@ -88,16 +107,16 @@ export default function DriversSection() {
               <h3 className="font-bold text-slate-900 text-base leading-tight mb-1">
                 {driver.profile?.full_name ?? "Driver"}
               </h3>
-              <p className="text-xs text-slate-400 mb-3">{driver.plate_number}</p>
+              <p className="text-xs text-slate-400 mb-3">{driver.plate_number || "Plat belum diatur"}</p>
 
               <div className="flex items-center justify-center gap-1 mb-1">
-                <StarRating rating={driver.rating_avg} />
+                <StarRating rating={driver.rating_avg || 5.0} />
                 <span className="text-xs font-semibold text-slate-700">
-                  {driver.rating_avg.toFixed(1)}
+                  {(driver.rating_avg || 5.0).toFixed(1)}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                {driver.total_trips} perjalanan
+                {driver.total_trips || 0} perjalanan
               </p>
 
               {/* Status badge */}
@@ -126,10 +145,6 @@ export default function DriversSection() {
             <ArrowRight size={15} />
           </Link>
         </div>
-
-        <p className="text-xs text-center text-slate-400 mt-6">
-          * Data driver di atas adalah contoh fiktif untuk mode demo. Bukan orang nyata.
-        </p>
       </div>
     </section>
   );

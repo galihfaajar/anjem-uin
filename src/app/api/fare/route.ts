@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { calculateFare } from "@/lib/pricing/calculateFare";
-import { DEMO_FARE_ZONES, DEMO_SERVICES } from "@/lib/data/demo";
+import { createClient } from "@/lib/supabase/server";
 
 const fareSchema = z.object({
   serviceId: z.string().min(1, "Layanan wajib dipilih"),
@@ -21,11 +21,30 @@ export async function POST(request: Request) {
     }
 
     const { serviceId, distanceKm } = parsed.data;
+    const supabase = await createClient();
 
-    const service = DEMO_SERVICES.find((s) => s.id === serviceId);
+    // Ambil layanan dari database
+    const { data: service } = await supabase
+      .from("services")
+      .select("id, name, extra_fee")
+      .eq("id", serviceId)
+      .eq("is_active", true)
+      .single();
+
     const extraFee = service ? service.extra_fee : 0;
 
-    const fareResult = calculateFare(distanceKm, extraFee, DEMO_FARE_ZONES);
+    // Ambil zona tarif dari database
+    const { data: fareZones } = await supabase
+      .from("fare_zones")
+      .select("*")
+      .eq("is_active", true)
+      .order("sort_order");
+
+    if (!fareZones || fareZones.length === 0) {
+      return NextResponse.json({ error: "Konfigurasi tarif belum tersedia" }, { status: 500 });
+    }
+
+    const fareResult = calculateFare(distanceKm, extraFee, fareZones);
 
     return NextResponse.json({
       success: true,

@@ -18,7 +18,6 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { siteConfig } from "@/config/site";
-import { DEMO_FAQS } from "@/lib/data/demo";
 import { buildWALink } from "@/lib/utils";
 
 const helpCategories = [

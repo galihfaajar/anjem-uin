@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -15,10 +16,27 @@ import {
   Package,
   ShoppingBasket,
 } from "lucide-react";
-import { DEMO_FARE_ZONES, DEMO_SERVICES, DEMO_POPULAR_ROUTES } from "@/lib/data/demo";
 import { formatRupiah, calculateFare } from "@/lib/pricing/calculateFare";
+import { createClient } from "@/lib/supabase/server";
 
-export default function TarifPage() {
+export const metadata: Metadata = {
+  title: "Tarif Layanan – Anjem UIN",
+  description: "Informasi tarif dan zona layanan antar jemput, jastip kuliner, dan pengiriman dokumen Anjem UIN.",
+};
+
+export default async function TarifPage() {
+  const supabase = await createClient();
+
+  const [{ data: fareZones }, { data: services }, { data: popularRoutes }] = await Promise.all([
+    supabase.from("fare_zones").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("services").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("popular_routes").select("*").eq("is_active", true).order("sort_order"),
+  ]);
+
+  const zones = fareZones || [];
+  const svcs = services || [];
+  const routes = popularRoutes || [];
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
       <Navbar />
@@ -41,12 +59,12 @@ export default function TarifPage() {
           </div>
 
           {/* Disclaimer Banner */}
-          <div className="demo-banner max-w-4xl mx-auto mb-10">
+          <div className="p-3.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 flex items-center gap-2.5 max-w-4xl mx-auto mb-10">
             <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
             <div className="text-xs sm:text-sm">
-              <strong className="font-bold">Perhatian Penting:</strong> Tabel tarif berikut
-              adalah <em>contoh konfigurasi awal</em> untuk simulasi sistem. Tarif resmi operasional
-              akan ditetapkan dan disosialisasikan oleh pengelola Anjem UIN sebelum layanan resmi dibuka.
+              <strong className="font-bold">Perhatian:</strong> Tarif resmi operasional
+              ditetapkan oleh pengelola Anjem UIN dan dapat berubah sewaktu-waktu. Konfirmasi tarif
+              final dilakukan saat pemesanan.
             </div>
           </div>
 
@@ -54,18 +72,18 @@ export default function TarifPage() {
           <div className="max-w-4xl mx-auto mb-14">
             <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
               <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block" />
-              Tabel 4 Zona Tarif Layanan
+              Tabel Zona Tarif Layanan
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {DEMO_FARE_ZONES.map((zone) => (
+              {zones.map((zone) => (
                 <div
                   key={zone.id}
                   className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm relative overflow-hidden flex flex-col justify-between"
                 >
                   <div
                     className="absolute top-0 left-0 right-0 h-1.5"
-                    style={{ backgroundColor: zone.color }}
+                    style={{ backgroundColor: zone.color || "#3b82f6" }}
                   />
 
                   <div>
@@ -76,8 +94,8 @@ export default function TarifPage() {
                       <span
                         className="text-[11px] font-bold px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: `${zone.color}15`,
-                          color: zone.color,
+                          backgroundColor: `${zone.color || "#3b82f6"}15`,
+                          color: zone.color || "#3b82f6",
                         }}
                       >
                         {zone.max_km ? `${zone.min_km} – ${zone.max_km} km` : `> ${zone.min_km} km`}
@@ -91,7 +109,7 @@ export default function TarifPage() {
                     <p className="text-xs text-slate-500 mb-4">
                       {zone.max_km
                         ? `Tarif flat untuk jarak hingga ${zone.max_km} km`
-                        : `Tarif dasar + ${formatRupiah(zone.per_km_price)}/km di atas 10 km`}
+                        : `Tarif dasar + ${formatRupiah(zone.per_km_price)}/km di atas ${zone.min_km} km`}
                     </p>
                   </div>
 
@@ -119,7 +137,7 @@ export default function TarifPage() {
 
             <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
               <div className="divide-y divide-slate-100">
-                {DEMO_SERVICES.map((svc) => (
+                {svcs.map((svc) => (
                   <div
                     key={svc.id}
                     className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors"
@@ -157,44 +175,46 @@ export default function TarifPage() {
           </div>
 
           {/* Estimasi Rute Populer */}
-          <div className="max-w-4xl mx-auto mb-14">
-            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-              <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block" />
-              Contoh Estimasi Tarif Rute Populer Kampus
-            </h2>
+          {routes.length > 0 && zones.length > 0 && (
+            <div className="max-w-4xl mx-auto mb-14">
+              <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block" />
+                Contoh Estimasi Tarif Rute Populer Kampus
+              </h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {DEMO_POPULAR_ROUTES.map((route) => {
-                const fareRes = calculateFare(route.distance_km, 0, DEMO_FARE_ZONES);
-                return (
-                  <div
-                    key={route.id}
-                    className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-sm flex items-center justify-between hover:border-blue-300 transition-colors"
-                  >
-                    <div className="min-w-0 pr-3">
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                        <MapPin size={13} className="text-blue-600 flex-shrink-0" />
-                        <span className="truncate">{route.origin_name}</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {routes.map((route) => {
+                  const fareRes = calculateFare(route.distance_km, 0, zones);
+                  return (
+                    <div
+                      key={route.id}
+                      className="bg-white rounded-xl p-4 border border-slate-200/90 shadow-sm flex items-center justify-between hover:border-blue-300 transition-colors"
+                    >
+                      <div className="min-w-0 pr-3">
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
+                          <MapPin size={13} className="text-blue-600 flex-shrink-0" />
+                          <span className="truncate">{route.origin_name}</span>
+                        </div>
+                        <div className="font-semibold text-slate-900 text-sm truncate">
+                          → {route.destination_name}
+                        </div>
+                        <span className="text-[11px] text-slate-400">
+                          Jarak estimasi: {route.distance_km} km ({fareRes.zone.name})
+                        </span>
                       </div>
-                      <div className="font-semibold text-slate-900 text-sm truncate">
-                        → {route.destination_name}
-                      </div>
-                      <span className="text-[11px] text-slate-400">
-                        Jarak estimasi: {route.distance_km} km ({fareRes.zone.name})
-                      </span>
-                    </div>
 
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-base font-extrabold text-blue-600">
-                        {formatRupiah(fareRes.total)}
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-base font-extrabold text-blue-600">
+                          {formatRupiah(fareRes.total)}
+                        </div>
+                        <span className="text-[10px] text-slate-400">Antar Jemput</span>
                       </div>
-                      <span className="text-[10px] text-slate-400">Antar Jemput</span>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Syarat & Kebijakan Ongkir */}
           <div className="max-w-4xl mx-auto bg-slate-100 rounded-2xl p-6 border border-slate-200 text-xs text-slate-600 leading-relaxed space-y-2">

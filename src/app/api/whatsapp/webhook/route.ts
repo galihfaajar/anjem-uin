@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(
-    { message: "WhatsApp Webhook Endpoint — Mode Demo/Inactive" },
+    { message: "WhatsApp Webhook Endpoint Active" },
     { status: 200 }
   );
 }

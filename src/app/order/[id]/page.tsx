@@ -17,7 +17,6 @@ import {
   Star,
   ShieldCheck,
 } from "lucide-react";
-import { DEMO_ORDERS, DEMO_ORDER_EVENTS } from "@/lib/data/demo";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import type { Order, OrderEvent, OrderStatus } from "@/types";
 import { createClient } from "@/lib/supabase/client";
@@ -91,111 +90,19 @@ export default function OrderTrackingPage({
           return true;
         }
       }
-    } catch {
-      // fall through to demo mode
+    } catch (err) {
+      console.error("Error fetching order:", err);
     }
     return false;
   }, [orderId]);
 
   const loadOrder = useCallback(async () => {
-    // Try live API first
     const fromAPI = await fetchOrderFromAPI();
-    if (fromAPI) {
-      setIsLoading(false);
-      return;
+    if (!fromAPI) {
+      setOrder(null);
     }
-
-    // Fall back to demo data or localStorage
-    let foundOrder = DEMO_ORDERS.find((o) => o.id === orderId);
-
-    if (!foundOrder && typeof window !== "undefined") {
-      const stored = localStorage.getItem(`order_${orderId}`);
-      if (stored) {
-        try {
-          foundOrder = JSON.parse(stored);
-        } catch {}
-      }
-    }
-
-    if (foundOrder) {
-      setOrder(foundOrder);
-      const demoEvents = DEMO_ORDER_EVENTS[orderId] || [
-        {
-          id: "ev-auto",
-          order_id: orderId,
-          status_from: null,
-          status_to: foundOrder.status,
-          actor_id: null,
-          notes: "Pesanan tercatat di sistem.",
-          created_at: foundOrder.created_at,
-        },
-      ];
-      setEvents(demoEvents);
-    } else {
-      // Default mock for arbitrary IDs
-      const mockOrder: Order = {
-        id: orderId,
-        customer_id: "demo-cust",
-        customer_name: "Mahasiswa UIN",
-        customer_phone: "081234567890",
-        driver_id: "drv-1",
-        driver_name: "Andi Kurniawan (Demo)",
-        driver_phone: "089876543210",
-        driver_plate: "AB 1234 DEMO",
-        service_id: "svc-1",
-        service_name: "Antar Jemput Motor",
-        pickup_name: "Kos Sekitar Kampus",
-        pickup_lat: -7.558,
-        pickup_lng: 110.771,
-        dropoff_name: "Gerbang Utama UIN Raden Mas Said",
-        dropoff_lat: -7.5576,
-        dropoff_lng: 110.7706,
-        distance_km: 2.5,
-        fare: 5000,
-        fare_snapshot: {
-          service_name: "Antar Jemput Motor",
-          zone_name: "Zona 1",
-          base_price: 5000,
-          extra_fee: 0,
-          per_km_extra: 0,
-          total: 5000,
-          distance_km: 2.5,
-          calculated_at: new Date().toISOString(),
-        },
-        item_notes: "Mohon konfirmasi jika sudah dekat",
-        items_estimate: null,
-        payment_method: "cash",
-        status: "assigned",
-        created_at: new Date().toISOString(),
-        assigned_at: new Date().toISOString(),
-        completed_at: null,
-        cancel_reason: null,
-      };
-      setOrder(mockOrder);
-      setEvents([
-        {
-          id: "ev-1",
-          order_id: orderId,
-          status_from: null,
-          status_to: "pending",
-          actor_id: null,
-          notes: "Pesanan dibuat.",
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: "ev-2",
-          order_id: orderId,
-          status_from: "pending",
-          status_to: "assigned",
-          actor_id: "drv-1",
-          notes: "Driver Andi Kurniawan ditugaskan menuju lokasi jemput.",
-          created_at: new Date().toISOString(),
-        },
-      ]);
-    }
-
     setIsLoading(false);
-  }, [orderId, fetchOrderFromAPI]);
+  }, [fetchOrderFromAPI]);
 
   useEffect(() => {
     loadOrder();
@@ -234,12 +141,12 @@ export default function OrderTrackingPage({
       )
       .subscribe();
 
-    // Fast poll (tiap 3 detik) selama order aktif agar status dan timeline ter-update seketika
+    // Backup fallback poll (tiap 6 detik) selama order aktif (Supabase Realtime handles instant updates)
     const interval = setInterval(() => {
       if (order?.status !== "completed" && order?.status !== "cancelled") {
         fetchOrderFromAPI();
       }
-    }, 3000);
+    }, 6000);
 
     return () => {
       supabase.removeChannel(channel);
@@ -256,43 +163,21 @@ export default function OrderTrackingPage({
   const handleCancelOrder = async () => {
     if (!order) return;
 
-    if (isLiveMode) {
-      try {
-        const res = await fetch(`/api/orders/${orderId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "cancelled",
-            cancel_reason: cancelReason || "Dibatalkan oleh pelanggan",
-          }),
-        });
-        if (res.ok) {
-          await fetchOrderFromAPI();
-          setCancelModalOpen(false);
-          return;
-        }
-      } catch {}
-    }
-
-    // Demo mode
-    const updated: Order = {
-      ...order,
-      status: "cancelled",
-      cancel_reason: cancelReason || "Dibatalkan oleh pelanggan",
-    };
-    setOrder(updated);
-    setEvents((prev) => [
-      ...prev,
-      {
-        id: `ev-${Date.now()}`,
-        order_id: order.id,
-        status_from: order.status,
-        status_to: "cancelled",
-        actor_id: null,
-        notes: `Pesanan dibatalkan: ${cancelReason || "Permintaan pelanggan"}`,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "cancelled",
+          cancel_reason: cancelReason || "Dibatalkan oleh pelanggan",
+        }),
+      });
+      if (res.ok) {
+        await fetchOrderFromAPI();
+        setCancelModalOpen(false);
+        return;
+      }
+    } catch {}
     setCancelModalOpen(false);
   };
 

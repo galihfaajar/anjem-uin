@@ -25,15 +25,8 @@ import {
   Edit,
   RefreshCw,
 } from "lucide-react";
-import {
-  DEMO_ORDERS,
-  DEMO_DRIVERS,
-  DEMO_SERVICES,
-  DEMO_FARE_ZONES,
-  DEMO_REVIEWS,
-} from "@/lib/data/demo";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
-import type { Order, Driver, DriverStatus, OrderStatus } from "@/types";
+import type { Order, Driver, DriverStatus, OrderStatus, Service, FareZone } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
 export default function AdminDashboardPage() {
@@ -41,8 +34,10 @@ export default function AdminDashboardPage() {
   const [activeTab, setActiveTab] = useState<"orders" | "drivers" | "fares" | "logs">("orders");
 
   // State Data
-  const [orders, setOrders] = useState<Order[]>(DEMO_ORDERS);
-  const [drivers, setDrivers] = useState<Driver[]>(DEMO_DRIVERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
+  const [fareZones, setFareZones] = useState<FareZone[]>([]);
   const [searchOrder, setSearchOrder] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -58,6 +53,11 @@ export default function AdminDashboardPage() {
         fetch("/api/admin/orders?limit=100"),
         fetch("/api/admin/drivers"),
       ]);
+
+      if (ordersRes.status === 401 || driversRes.status === 401 || ordersRes.status === 403 || driversRes.status === 403) {
+        router.push("/masuk");
+        return;
+      }
 
       if (ordersRes.ok && driversRes.ok) {
         const ordersData = await ordersRes.json();
@@ -84,11 +84,21 @@ export default function AdminDashboardPage() {
           }));
           setDrivers(flatDrivers);
         }
+
+        // Fetch services & fare zones from Supabase
+        const supabase = createClient();
+        const [{ data: sData }, { data: zData }] = await Promise.all([
+          supabase.from("services").select("*").order("name"),
+          supabase.from("fare_zones").select("*").order("min_km"),
+        ]);
+        if (sData) setServices(sData);
+        if (zData) setFareZones(zData);
+
         setIsLive(true);
       }
     } catch {}
     setIsLoadingData(false);
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchLiveData();
@@ -96,29 +106,7 @@ export default function AdminDashboardPage() {
 
   const [auditLogs, setAuditLogs] = useState<
     { id: string; action: string; target: string; time: string; admin: string }[]
-  >([
-    {
-      id: "log-1",
-      action: "VERIFIKASI_DRIVER",
-      target: "Andi Kurniawan (drv-1) disetujui",
-      time: "2026-10-19 08:00 WIB",
-      admin: "Admin Pusat",
-    },
-    {
-      id: "log-2",
-      action: "PENUGASAN_ORDER",
-      target: "ORD-UIN-7822 ditugaskan ke drv-1",
-      time: "2026-10-19 09:32 WIB",
-      admin: "Admin Pusat",
-    },
-    {
-      id: "log-3",
-      action: "UPDATE_TARIF",
-      target: "Verifikasi konfigurasi Zona 1-4",
-      time: "2026-10-18 16:00 WIB",
-      admin: "Admin Pusat",
-    },
-  ]);
+  >([]);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -142,36 +130,33 @@ export default function AdminDashboardPage() {
 
   // Driver actions
   const handleDriverStatus = async (driverId: string, newStatus: DriverStatus) => {
-    // Try live update first
-    if (isLive) {
-      try {
-        const res = await fetch("/api/admin/drivers", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ driverId, status: newStatus }),
-        });
-        if (res.ok) {
-          await fetchLiveData();
-          showToast(`Status driver berhasil diubah ke ${newStatus}.`);
-          return;
-        }
-      } catch {}
+    try {
+      const res = await fetch("/api/admin/drivers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId, status: newStatus }),
+      });
+      if (res.ok) {
+        await fetchLiveData();
+        setAuditLogs((prev) => [
+          {
+            id: `log-${Date.now()}`,
+            action: `DRIVER_${newStatus.toUpperCase()}`,
+            target: `Driver ${driverId} diubah ke ${newStatus}`,
+            time: new Date().toLocaleTimeString("id-ID") + " WIB",
+            admin: "Admin Pusat",
+          },
+          ...prev,
+        ]);
+        showToast(`Status driver berhasil diubah ke ${newStatus}.`);
+        return;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal mengubah status driver.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
     }
-    // Demo fallback
-    setDrivers((prev) =>
-      prev.map((d) => (d.id === driverId ? { ...d, status: newStatus } : d))
-    );
-    setAuditLogs((prev) => [
-      {
-        id: `log-${Date.now()}`,
-        action: `DRIVER_${newStatus.toUpperCase()}`,
-        target: `Driver ${driverId} diubah ke ${newStatus}`,
-        time: new Date().toLocaleTimeString("id-ID") + " WIB",
-        admin: "Admin Pusat",
-      },
-      ...prev,
-    ]);
-    showToast(`Status driver ${driverId} berhasil diubah ke ${newStatus}.`);
   };
 
   // Assign driver to order
@@ -179,55 +164,28 @@ export default function AdminDashboardPage() {
     if (!selectedOrder) return;
     const driver = drivers.find((d) => d.id === driverId);
 
-    // Try live update
-    if (isLive) {
-      try {
-        const res = await fetch(`/api/admin/orders/${selectedOrder.id}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "assigned",
-            driverId,
-            notes: `Driver ${driver?.profile?.full_name || driverId} ditugaskan oleh admin.`,
-          }),
-        });
-        if (res.ok) {
-          await fetchLiveData();
-          setAssignModalOpen(false);
-          showToast(`Driver berhasil ditugaskan ke order ${selectedOrder.id}!`);
-          return;
-        }
-      } catch {}
+    try {
+      const res = await fetch(`/api/admin/orders/${selectedOrder.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: "assigned",
+          driverId,
+          notes: `Driver ${driver?.profile?.full_name || driverId} ditugaskan oleh admin.`,
+        }),
+      });
+      if (res.ok) {
+        await fetchLiveData();
+        setAssignModalOpen(false);
+        showToast(`Driver berhasil ditugaskan ke order ${selectedOrder.id}!`);
+        return;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(errData.error || "Gagal menugaskan driver.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
     }
-
-    // Demo fallback
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === selectedOrder.id
-          ? {
-              ...o,
-              status: "assigned",
-              driver_id: driverId,
-              driver_name: driver?.profile?.full_name || "Driver Ditugaskan",
-              assigned_at: new Date().toISOString(),
-            }
-          : o
-      )
-    );
-
-    setAuditLogs((prev) => [
-      {
-        id: `log-${Date.now()}`,
-        action: "ASSIGN_DRIVER",
-        target: `Order ${selectedOrder.id} ditugaskan ke driver ${driverId}`,
-        time: new Date().toLocaleTimeString("id-ID") + " WIB",
-        admin: "Admin Pusat",
-      },
-      ...prev,
-    ]);
-
-    setAssignModalOpen(false);
-    showToast(`Driver berhasil ditugaskan ke order ${selectedOrder.id}!`);
   };
 
   // CSV Export
@@ -284,8 +242,6 @@ export default function AdminDashboardPage() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("anjem_role");
       localStorage.removeItem("anjem_user");
-      localStorage.removeItem("anjem_demo_role");
-      localStorage.removeItem("anjem_demo_user");
     }
     router.push("/masuk");
   };
@@ -642,9 +598,9 @@ export default function AdminDashboardPage() {
               {activeTab === "fares" && (
                 <div className="space-y-6">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-3">4 Layanan Aktif:</h3>
+                    <h3 className="text-sm font-bold text-slate-900 mb-3">{services.length} Layanan Aktif:</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {DEMO_SERVICES.map((s) => (
+                      {services.map((s) => (
                         <div key={s.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center text-xs">
                           <div>
                             <div className="font-bold text-slate-900">{s.name}</div>
@@ -661,9 +617,9 @@ export default function AdminDashboardPage() {
                   </div>
 
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-3">4 Zona Tarif:</h3>
+                    <h3 className="text-sm font-bold text-slate-900 mb-3">{fareZones.length} Zona Tarif:</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      {DEMO_FARE_ZONES.map((z) => (
+                      {fareZones.map((z) => (
                         <div key={z.id} className="p-4 rounded-xl border border-slate-200 bg-white text-xs">
                           <div className="font-bold text-slate-900 mb-1">{z.name}</div>
                           <div className="text-slate-500 mb-2">

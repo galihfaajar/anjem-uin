@@ -26,7 +26,7 @@ export default function PrivasiPage() {
           </div>
 
           {/* Draf Disclaimer */}
-          <div className="demo-banner mb-8">
+          <div className="p-3.5 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 flex items-center gap-2.5 mb-8">
             <AlertTriangle size={18} className="text-amber-600 flex-shrink-0" />
             <div className="text-xs sm:text-sm">
               <strong>Catatan Hukum:</strong> Halaman ini merupakan draf kebijakan privasi awal

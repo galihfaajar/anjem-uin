@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { calculateFare } from "@/lib/pricing/calculateFare";
-import { DEMO_FARE_ZONES, DEMO_SERVICES } from "@/lib/data/demo";
 import { createClient } from "@/lib/supabase/server";
 import type { Order, OrderEvent } from "@/types";
 
@@ -21,6 +20,7 @@ const createOrderSchema = z.object({
   paymentMethod: z.enum(["cash", "qris_driver"]),
 });
 
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -34,20 +34,84 @@ export async function POST(request: Request) {
     }
 
     const data = parsed.data;
-    const service = DEMO_SERVICES.find((s) => s.id === data.serviceId);
-    if (!service) {
-      return NextResponse.json({ error: "Layanan tidak ditemukan" }, { status: 404 });
+    const supabase = await createClient();
+
+    // Require authenticated user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Anda harus login untuk membuat pesanan." }, { status: 401 });
+    }
+    const customerId = user.id;
+
+    // Fetch service + fare_zones in parallel
+    const [{ data: service, error: svcErr }, { data: fareZones, error: zonesErr }] = await Promise.all([
+      supabase.from("services").select("id, name, extra_fee, slug").eq("id", data.serviceId).eq("is_active", true).single(),
+      supabase.from("fare_zones").select("*").eq("is_active", true).order("sort_order"),
+    ]);
+
+    if (svcErr || !service) {
+      return NextResponse.json({ error: "Layanan tidak ditemukan atau tidak aktif" }, { status: 404 });
+    }
+
+    if (zonesErr || !fareZones || fareZones.length === 0) {
+      return NextResponse.json({ error: "Konfigurasi tarif belum tersedia" }, { status: 500 });
     }
 
     // HITUNG ULANG TARIF DI SERVER — jangan pernah percaya angka dari client
-    const fareResult = calculateFare(data.distanceKm, service.extra_fee, DEMO_FARE_ZONES);
+    const fareResult = calculateFare(data.distanceKm, service.extra_fee, fareZones);
 
     const orderId = `ORD-UIN-${Math.floor(1000 + Math.random() * 9000)}`;
     const now = new Date().toISOString();
 
+    const fareSnapshot = {
+      service_name: service.name,
+      zone_name: fareResult.zone.name,
+      base_price: fareResult.base_price,
+      extra_fee: fareResult.extra_fee,
+      per_km_extra: fareResult.per_km_extra,
+      total: fareResult.total,
+      distance_km: data.distanceKm,
+      calculated_at: now,
+    };
+
+    const { error: insertErr } = await supabase.from("orders").insert({
+      id: orderId,
+      customer_id: customerId,
+      customer_name: data.customerName,
+      customer_phone: data.customerPhone,
+      service_id: service.id,
+      service_name: service.name,
+      pickup_name: data.pickupName,
+      pickup_lat: data.pickupLat,
+      pickup_lng: data.pickupLng,
+      dropoff_name: data.dropoffName,
+      dropoff_lat: data.dropoffLat,
+      dropoff_lng: data.dropoffLng,
+      distance_km: data.distanceKm,
+      fare: fareResult.total,
+      fare_snapshot: fareSnapshot,
+      item_notes: data.itemNotes ?? null,
+      items_estimate: data.itemsEstimate ?? null,
+      payment_method: data.paymentMethod,
+      status: "pending",
+    });
+
+    if (insertErr) {
+      console.error("Error inserting order:", insertErr);
+      return NextResponse.json({ error: "Gagal menyimpan pesanan ke database" }, { status: 500 });
+    }
+
+    await supabase.from("order_events").insert({
+      order_id: orderId,
+      status_from: null,
+      status_to: "pending",
+      actor_id: customerId,
+      notes: "Pesanan berhasil dibuat, menunggu konfirmasi driver/admin.",
+    });
+
     const newOrder: Order = {
       id: orderId,
-      customer_id: "demo-user",
+      customer_id: customerId,
       customer_name: data.customerName,
       customer_phone: data.customerPhone,
       driver_id: null,
@@ -61,16 +125,7 @@ export async function POST(request: Request) {
       dropoff_lng: data.dropoffLng,
       distance_km: data.distanceKm,
       fare: fareResult.total,
-      fare_snapshot: {
-        service_name: service.name,
-        zone_name: fareResult.zone.name,
-        base_price: fareResult.base_price,
-        extra_fee: fareResult.extra_fee,
-        per_km_extra: fareResult.per_km_extra,
-        total: fareResult.total,
-        distance_km: data.distanceKm,
-        calculated_at: now,
-      },
+      fare_snapshot: fareSnapshot,
       item_notes: data.itemNotes ?? null,
       items_estimate: data.itemsEstimate ?? null,
       payment_method: data.paymentMethod,
@@ -86,53 +141,10 @@ export async function POST(request: Request) {
       order_id: orderId,
       status_from: null,
       status_to: "pending",
-      actor_id: null,
+      actor_id: customerId,
       notes: "Pesanan berhasil dibuat, menunggu konfirmasi driver/admin.",
       created_at: now,
     };
-
-    // Simpan ke Supabase jika URL konfigurasi aktif
-    if (
-      process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("placeholder")
-    ) {
-      try {
-        const supabase = await createClient();
-        const { data: authUser } = await supabase.auth.getUser();
-        const customerId = authUser?.user?.id || null;
-
-        await supabase.from("orders").insert({
-          id: orderId,
-          customer_id: customerId,
-          customer_name: data.customerName,
-          customer_phone: data.customerPhone,
-          service_id: service.id,
-          pickup_name: data.pickupName,
-          pickup_lat: data.pickupLat,
-          pickup_lng: data.pickupLng,
-          dropoff_name: data.dropoffName,
-          dropoff_lat: data.dropoffLat,
-          dropoff_lng: data.dropoffLng,
-          distance_km: data.distanceKm,
-          fare: fareResult.total,
-          fare_snapshot: newOrder.fare_snapshot,
-          item_notes: data.itemNotes ?? null,
-          items_estimate: data.itemsEstimate ?? null,
-          payment_method: data.paymentMethod,
-          status: "pending",
-        });
-
-        await supabase.from("order_events").insert({
-          order_id: orderId,
-          status_from: null,
-          status_to: "pending",
-          actor_id: customerId,
-          notes: "Pesanan berhasil dibuat, menunggu konfirmasi driver/admin.",
-        });
-      } catch (dbErr) {
-        console.error("Pemberitahuan simpan database Supabase:", dbErr);
-      }
-    }
 
     return NextResponse.json({
       success: true,

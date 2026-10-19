@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { Bike, UtensilsCrossed, ShoppingBasket, Package, ArrowRight } from "lucide-react";
 import type { Service } from "@/types";
-import { DEMO_SERVICES } from "@/lib/data/demo";
 
 const iconMap: Record<string, React.ComponentType<{ size?: number }>> = {
   Bike,
@@ -23,6 +22,53 @@ const iconBoxColorMap: Record<number, string> = {
   2: "icon-box-green",
   3: "icon-box-purple",
 };
+
+const DEFAULT_SERVICES: Service[] = [
+  {
+    id: "svc-1",
+    name: "Antar Jemput Motor",
+    slug: "antar-jemput-motor",
+    description: "Naik motor langsung dari lokasi kamu ke tujuan. Cepat, aman, dan terjangkau untuk mobilitas harian mahasiswa.",
+    icon: "Bike",
+    extra_fee: 0,
+    is_active: true,
+    badge_text: "Paling Populer",
+    sort_order: 1,
+  },
+  {
+    id: "svc-2",
+    name: "Jastip Kuliner & Makanan",
+    slug: "jastip-kuliner",
+    description: "Titip beli makanan, minuman, atau jajanan favoritmu. Driver belikan dan antar langsung ke kosan.",
+    icon: "UtensilsCrossed",
+    extra_fee: 2000,
+    is_active: true,
+    badge_text: "Favorit Mahasiswa",
+    sort_order: 2,
+  },
+  {
+    id: "svc-3",
+    name: "Jastip Belanja Harian & Pasar",
+    slug: "jastip-belanja",
+    description: "Titip belanja kebutuhan sehari-hari dari minimarket, pasar, atau toko langgananmu.",
+    icon: "ShoppingBasket",
+    extra_fee: 2000,
+    is_active: true,
+    badge_text: "Praktis & Hemat",
+    sort_order: 3,
+  },
+  {
+    id: "svc-4",
+    name: "Kirim Dokumen & Paket Kilat",
+    slug: "kirim-dokumen",
+    description: "Kirim surat, berkas tugas, atau paket kecil antar lokasi di area layanan dengan cepat.",
+    icon: "Package",
+    extra_fee: 0,
+    is_active: true,
+    badge_text: "Instan Sampai",
+    sort_order: 4,
+  },
+];
 
 function ServiceCard({ service, index }: { service: Service; index: number }) {
   const Icon = iconMap[service.icon] ?? Bike;
@@ -67,8 +113,8 @@ function ServiceCard({ service, index }: { service: Service; index: number }) {
   );
 }
 
-export default function ServicesSection() {
-  const services = DEMO_SERVICES.filter((s) => s.is_active);
+export default function ServicesSection({ services: propServices }: { services?: Service[] }) {
+  const services = (propServices && propServices.length > 0 ? propServices : DEFAULT_SERVICES).filter((s) => s.is_active);
 
   return (
     <section id="layanan" className="py-20">

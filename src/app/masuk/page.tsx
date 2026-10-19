@@ -1,17 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Bike, Mail, Lock, ArrowRight, ShieldCheck, UserCheck, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-export default function MasukPage() {
+
+
+function MasukForm() {
+
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || null;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,10 +65,12 @@ export default function MasukPage() {
         } else if (role === "driver") {
           router.push("/driver");
         } else {
-          router.push("/dashboard");
+          // Customer: respect redirect param if present
+          router.push(redirectTo || "/dashboard");
         }
       } else {
-        router.push("/dashboard");
+        router.push(redirectTo || "/dashboard");
+
       }
     } catch (err) {
       setErrorMsg("Gagal menghubungi server autentikasi.");
@@ -71,21 +79,6 @@ export default function MasukPage() {
     }
   };
 
-  const handleDemoLogin = (role: "customer" | "driver" | "admin") => {
-    // Simpan role demo di localStorage / cookie agar dashboard bisa langsung dicoba
-    if (typeof window !== "undefined") {
-      localStorage.setItem("anjem_demo_role", role);
-      localStorage.setItem("anjem_demo_user", JSON.stringify({
-        id: role === "driver" ? "drv-1" : role === "admin" ? "admin-1" : "user-cust-1",
-        name: role === "driver" ? "Andi Kurniawan (Demo Driver)" : role === "admin" ? "Admin Anjem UIN" : "Fajar Nugraha (Demo Customer)",
-        role,
-      }));
-    }
-
-    if (role === "admin") router.push("/admin");
-    else if (role === "driver") router.push("/driver");
-    else router.push("/dashboard");
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
@@ -103,10 +96,11 @@ export default function MasukPage() {
         </h2>
         <p className="mt-1 text-xs sm:text-sm text-slate-500">
           Belum punya akun?{" "}
-          <Link href="/daftar" className="font-semibold text-blue-600 hover:text-blue-500">
+          <Link href={redirectTo ? `/daftar?redirect=${encodeURIComponent(redirectTo)}` : "/daftar"} className="font-semibold text-blue-600 hover:text-blue-500">
             Daftar sekarang
           </Link>
         </p>
+
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -167,39 +161,6 @@ export default function MasukPage() {
               <ArrowRight size={16} />
             </button>
           </form>
-
-          {/* Quick Demo Access Bar */}
-          <div className="mt-8 pt-6 border-t border-slate-100">
-            <span className="block text-center text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-              ⚡ Akses Cepat Mode Demo
-            </span>
-            <p className="text-[11px] text-slate-500 text-center mb-3">
-              Pilih peran untuk menguji antarmuka tanpa perlu kredensial Supabase live:
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleDemoLogin("customer")}
-                className="p-2.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 text-xs font-bold text-center transition-colors"
-              >
-                👤 Pelanggan
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin("driver")}
-                className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-700 text-xs font-bold text-center transition-colors"
-              >
-                🛵 Driver
-              </button>
-              <button
-                type="button"
-                onClick={() => handleDemoLogin("admin")}
-                className="p-2.5 rounded-xl border border-purple-200 bg-purple-50/70 hover:bg-purple-100/70 text-purple-700 text-xs font-bold text-center transition-colors"
-              >
-                🛡️ Admin
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="mt-6 text-center">
@@ -209,5 +170,13 @@ export default function MasukPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function MasukPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="text-slate-400 text-sm">Memuat halaman...</div></div>}>
+      <MasukForm />
+    </Suspense>
   );
 }

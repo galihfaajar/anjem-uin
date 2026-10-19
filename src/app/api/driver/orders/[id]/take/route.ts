@@ -18,14 +18,21 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Fetch driver record
-    const { data: driverRecord, error: driverErr } = await supabase
-      .from("drivers")
-      .select(
-        "id, status, is_online, plate_number, vehicle_type, profile:profiles!drivers_profile_id_fkey(full_name, phone)"
-      )
-      .eq("profile_id", user.id)
-      .single();
+    // Fetch driver record + check ongoing order in PARALLEL
+    const [{ data: driverRecord, error: driverErr }, { data: ongoingOrder }] = await Promise.all([
+      supabase
+        .from("drivers")
+        .select(
+          "id, status, is_online, plate_number, vehicle_type, profile:profiles!drivers_profile_id_fkey(full_name, phone)"
+        )
+        .eq("profile_id", user.id)
+        .single(),
+      supabase
+        .from("orders")
+        .select("id, status, driver_id")
+        .eq("id", orderId)
+        .maybeSingle(),
+    ]);
 
     if (driverErr || !driverRecord) {
       console.error("[take] driver fetch error:", driverErr);
@@ -52,50 +59,41 @@ export async function POST(
       );
     }
 
-    // Check if this driver already has an active/ongoing order
-    const { data: ongoingOrder } = await supabase
+    // Check order availability (loaded in parallel above)
+    if (!ongoingOrder) {
+      return NextResponse.json({ error: "Order tidak ditemukan" }, { status: 404 });
+    }
+
+    if (ongoingOrder.status !== "pending") {
+      return NextResponse.json(
+        {
+          error: `Order ini sudah dalam status "${ongoingOrder.status}". Silakan pilih orderan lain.`,
+        },
+        { status: 409 }
+      );
+    }
+
+    if (ongoingOrder.driver_id !== null) {
+      return NextResponse.json(
+        { error: "Order ini sudah diambil driver lain." },
+        { status: 409 }
+      );
+    }
+
+    // Check if this driver already has an active order (can do this now since we confirmed the order is pending)
+    const { data: activeOrder } = await supabase
       .from("orders")
-      .select("id, status")
+      .select("id")
       .eq("driver_id", driverRecord.id)
       .in("status", ["assigned", "on_the_way"])
       .maybeSingle();
 
-    if (ongoingOrder) {
+    if (activeOrder) {
       return NextResponse.json(
         {
-          error: `Anda masih memiliki orderan aktif (${ongoingOrder.id}) yang sedang berjalan. Selesaikan pesanan tersebut terlebih dahulu!`,
+          error: `Anda masih memiliki orderan aktif yang sedang berjalan. Selesaikan pesanan tersebut terlebih dahulu!`,
         },
         { status: 400 }
-      );
-    }
-
-    // Verify order exists and is still truly pending with no driver (double-check before atomic update)
-    const { data: orderCheck, error: checkErr } = await supabase
-      .from("orders")
-      .select("id, status, driver_id")
-      .eq("id", orderId)
-      .maybeSingle();
-
-    if (checkErr || !orderCheck) {
-      return NextResponse.json(
-        { error: "Order tidak ditemukan" },
-        { status: 404 }
-      );
-    }
-
-    if (orderCheck.status !== "pending") {
-      return NextResponse.json(
-        {
-          error: `Order ini sudah dalam status "${orderCheck.status}". Silakan pilih orderan lain.`,
-        },
-        { status: 409 }
-      );
-    }
-
-    if (orderCheck.driver_id !== null) {
-      return NextResponse.json(
-        { error: "Order ini sudah diambil driver lain." },
-        { status: 409 }
       );
     }
 
@@ -106,7 +104,9 @@ export async function POST(
     const driverFullName = (profile as any)?.full_name || "Driver";
     const driverPhone = (profile as any)?.phone || null;
 
-    // ATOMIC UPDATE: Only succeeds if status is still 'pending' (optimistic lock)
+    const now = new Date().toISOString();
+
+    // ATOMIC UPDATE: Only succeeds if status is still 'pending' AND no driver assigned (race condition safe)
     const { data: updatedOrder, error: updateErr } = await supabase
       .from("orders")
       .update({
@@ -115,11 +115,11 @@ export async function POST(
         driver_phone: driverPhone,
         driver_plate: driverRecord.plate_number || null,
         status: "assigned",
-        assigned_at: new Date().toISOString(),
+        assigned_at: now,
       })
       .eq("id", orderId)
-      .eq("status", "pending") // Atomic optimistic lock – only matches if still pending
-      .is("driver_id", null) // Extra safety: only if no driver assigned yet
+      .eq("status", "pending") // Atomic optimistic lock
+      .is("driver_id", null)   // Extra safety: only if no driver assigned yet
       .select()
       .maybeSingle();
 
@@ -142,13 +142,15 @@ export async function POST(
       );
     }
 
-    // Record the event
-    await supabase.from("order_events").insert({
+    // Record the event (fire-and-forget — don't block response)
+    supabase.from("order_events").insert({
       order_id: orderId,
       status_from: "pending",
       status_to: "assigned",
       actor_id: user.id,
       notes: `Driver ${driverFullName} (${driverRecord.plate_number || "—"}) mengambil pesanan ini.`,
+    }).then(({ error }) => {
+      if (error) console.error("[take] event insert error:", error);
     });
 
     return NextResponse.json({

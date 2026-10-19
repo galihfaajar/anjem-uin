@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { ChevronDown, Map } from "lucide-react";
 import dynamic from "next/dynamic";
-import { DEMO_FAQS } from "@/lib/data/demo";
 import { siteConfig } from "@/config/site";
 import { cn } from "@/lib/utils";
+import type { Faq } from "@/types";
 
 // Lazy-load map to avoid SSR issues with Leaflet
 const ServiceAreaMap = dynamic(() => import("./ServiceAreaMap"), {
@@ -19,6 +19,39 @@ const ServiceAreaMap = dynamic(() => import("./ServiceAreaMap"), {
     />
   ),
 });
+
+const DEFAULT_FAQS: Faq[] = [
+  {
+    id: "faq-1",
+    question: "Bagaimana cara memesan layanan Anjem UIN?",
+    answer: "Kamu bisa pesan melalui menu Formulir Pemesanan di website ini atau via WhatsApp. Masukkan rute penjemputan dan tujuan, sistem akan langsung mencarikan driver terdekat.",
+    sort_order: 1,
+  },
+  {
+    id: "faq-2",
+    question: "Berapa tarif layanan antar-jemput?",
+    answer: "Tarif dihitung transparan sesuai zona jarak kampus UIN RM Said Surakarta. Mulai Rp 5.000 untuk area sekitar kampus.",
+    sort_order: 2,
+  },
+  {
+    id: "faq-3",
+    question: "Di mana saja area yang dilayani?",
+    answer: "Area layanan mencakup kawasan kampus UIN Raden Mas Said, Kartasura, Sukoharjo, hingga Solo Raya.",
+    sort_order: 3,
+  },
+  {
+    id: "faq-4",
+    question: "Apa saja metode pembayaran yang diterima?",
+    answer: "Mendukung pembayaran tunai (cash) langsung ke driver atau via QRIS pribadi driver saat sampai di tujuan.",
+    sort_order: 4,
+  },
+  {
+    id: "faq-5",
+    question: "Apakah driver sudah terverifikasi?",
+    answer: "Semua mitra driver adalah mahasiswa atau mitra lokal yang telah melalui proses verifikasi identitas dan kendaraan oleh admin kampus.",
+    sort_order: 5,
+  },
+];
 
 function AccordionItem({
   question,
@@ -60,8 +93,15 @@ function AccordionItem({
   );
 }
 
-export default function CoverageAndFaqSection() {
+interface CoverageAndFaqSectionProps {
+  faqs?: Faq[];
+}
+
+export default function CoverageAndFaqSection({
+  faqs: propFaqs,
+}: CoverageAndFaqSectionProps) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
+  const faqs = propFaqs && propFaqs.length > 0 ? propFaqs : DEFAULT_FAQS;
 
   return (
     <section id="jangkauan" className="py-20 bg-white">
@@ -108,7 +148,7 @@ export default function CoverageAndFaqSection() {
           </div>
 
           <div className="max-w-3xl mx-auto">
-            {DEMO_FAQS.map((faq, i) => (
+            {faqs.map((faq, i) => (
               <AccordionItem
                 key={faq.id}
                 question={faq.question}

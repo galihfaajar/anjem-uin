@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+
 import {
   Bike,
   Mail,
@@ -17,9 +18,13 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
-export default function DaftarPage() {
+function DaftarForm() {
+
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirect") || "/dashboard";
   const [accountType, setAccountType] = useState<"customer" | "driver">("customer");
+
 
   // Form states
   const [fullName, setFullName] = useState("");
@@ -80,11 +85,12 @@ export default function DaftarPage() {
       }
 
       if (data.session) {
-        // Langsung login
+        // Langsung login — redirect ke halaman yang diminta
         setSuccessMsg("Pendaftaran berhasil! Mengalihkan...");
         setTimeout(() => {
-          router.push(accountType === "driver" ? "/driver" : "/dashboard");
+          router.push(accountType === "driver" ? "/driver" : redirectTo);
         }, 1000);
+
       } else {
         // Email verification required
         setSuccessMsg(
@@ -116,10 +122,11 @@ export default function DaftarPage() {
         </h2>
         <p className="mt-1 text-xs sm:text-sm text-slate-500">
           Sudah punya akun?{" "}
-          <Link href="/masuk" className="font-semibold text-blue-600 hover:text-blue-500">
+          <Link href={`/masuk?redirect=${encodeURIComponent(redirectTo)}`} className="font-semibold text-blue-600 hover:text-blue-500">
             Masuk di sini
           </Link>
         </p>
+
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -313,5 +320,13 @@ export default function DaftarPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function DaftarPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="text-slate-400 text-sm">Memuat halaman...</div></div>}>
+      <DaftarForm />
+    </Suspense>
   );
 }

@@ -22,8 +22,8 @@ import {
   CreditCard,
   LogOut,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
-import { DEMO_ORDERS, DEMO_DRIVERS } from "@/lib/data/demo";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import { buildWALink } from "@/lib/utils";
 import type { Order } from "@/types";
@@ -46,17 +46,14 @@ export default function DriverDashboardPage() {
   const [driverStatus, setDriverStatus] = useState<"pending" | "approved" | "blocked">("approved");
   // Prevent double-click / race on "Ambil Order"
   const [takingOrderId, setTakingOrderId] = useState<string | null>(null);
+  // Track status update loading per order
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   // Debounce concurrent fetch calls
   const isFetchingRef = { current: false };
 
-  const driverInfoDemo = DEMO_DRIVERS[0];
-
-  const fetchLiveData = useCallback(async () => {
-    // Debounce: skip if a fetch is already running
-    if (isFetchingRef.current) return false;
-    isFetchingRef.current = true;
+  // Fetch driver profile (called on mount and manual refresh)
+  const fetchProfile = useCallback(async () => {
     try {
-      // Fetch profile
       const profileRes = await fetch("/api/profile");
       if (profileRes.ok) {
         const pData = await profileRes.json();
@@ -71,9 +68,17 @@ export default function DriverDashboardPage() {
             setIsOnline(pData.driver.is_online);
           }
         }
+        return true;
       }
+    } catch {}
+    return false;
+  }, []);
 
-      // Fetch orders
+  // Fetch orders only (efficient for polling and realtime)
+  const fetchOrders = useCallback(async () => {
+    if (isFetchingRef.current) return false;
+    isFetchingRef.current = true;
+    try {
       const ordersRes = await fetch("/api/driver/orders");
       if (ordersRes.ok) {
         const oData = await ordersRes.json();
@@ -86,33 +91,35 @@ export default function DriverDashboardPage() {
     } catch {}
     isFetchingRef.current = false;
     return false;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const init = async () => {
-      const ok = await fetchLiveData();
-      if (!ok) {
-        // Demo fallback
-        const demoDriver = DEMO_DRIVERS[0];
-        setDriverName(demoDriver.profile?.full_name || "Andi Kurniawan (Demo)");
-        setDriverPlate(demoDriver.plate_number);
-        setDriverVehicle(demoDriver.vehicle_type);
-        setDriverRating(demoDriver.rating_avg);
-        setDriverTrips(demoDriver.total_trips);
-        setPendingOrders(DEMO_ORDERS.filter((o) => o.status === "pending"));
-        setMyOrders(DEMO_ORDERS.filter((o) => o.driver_id === "drv-1" && ["assigned", "on_the_way", "completed"].includes(o.status)));
+      const [profileOk, ordersOk] = await Promise.all([
+        fetchProfile(),
+        fetchOrders(),
+      ]);
+
+      if (!profileOk && !ordersOk) {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push("/masuk");
+          return;
+        }
       }
       setIsLoading(false);
     };
     init();
-  }, [fetchLiveData]);
+  }, [fetchProfile, fetchOrders, router]);
 
-  // Real-time synchronization: Supabase realtime channel + backup poll tiap 5 detik
+  // Real-time synchronization: Supabase realtime channel with debounce + 8s light fallback
   useEffect(() => {
     if (!isLive) return;
 
     const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
     const channel = supabase
       .channel("driver_orders_realtime_pool")
       .on(
@@ -123,22 +130,26 @@ export default function DriverDashboardPage() {
           table: "orders",
         },
         () => {
-          // Small delay so DB write is committed before we read
-          setTimeout(() => fetchLiveData(), 300);
+          // Debounce: wait 350ms so rapid database events fire only 1 fetch
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrders();
+          }, 350);
         }
       )
       .subscribe();
 
-    // Fallback poll every 5s (longer to avoid hammering)
+    // Fallback poll: only fetch orders every 8s (no profile re-fetching)
     const interval = setInterval(() => {
-      fetchLiveData();
-    }, 5000);
+      fetchOrders();
+    }, 8000);
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [isLive, fetchLiveData]);
+  }, [isLive, fetchOrders]);
 
   // Derived
   const availableOrders = isLive ? pendingOrders : pendingOrders;
@@ -182,86 +193,75 @@ export default function DriverDashboardPage() {
       return;
     }
 
-    if (isLive) {
-      setTakingOrderId(orderId); // Lock the button immediately
-      try {
-        const res = await fetch(`/api/driver/orders/${orderId}/take`, {
-          method: "POST",
-        });
-        const data = await res.json();
-        if (res.ok) {
-          // Immediately update local state so UI is snappy, then refresh from server
-          setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
-          setActiveTab("active");
-          showToast(`Order berhasil diambil!`);
-          // Refresh from server after a short delay
-          setTimeout(() => fetchLiveData(), 400);
-        } else {
-          showToast(data.error || "Gagal mengambil order.");
-          // Refresh to get latest state
-          await fetchLiveData();
+    setTakingOrderId(orderId); // Lock the button immediately
+    try {
+      const res = await fetch(`/api/driver/orders/${orderId}/take`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // INSTANT OPTIMISTIC UI: Remove from pending and immediately insert into active orders!
+        setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
+        if (data.order) {
+          setMyOrders((prev) => [data.order, ...prev.filter((o) => o.id !== orderId)]);
         }
-      } catch {
-        showToast("Gagal terhubung ke server.");
-      } finally {
-        setTakingOrderId(null); // Always unlock
+        setActiveTab("active");
+        showToast("Order berhasil diambil!");
+      } else {
+        showToast(data.error || "Gagal mengambil order.");
+        await fetchOrders();
       }
-      return;
+    } catch {
+      showToast("Gagal terhubung ke server.");
+    } finally {
+      setTakingOrderId(null); // Always unlock
     }
-
-    // Demo fallback
-    setPendingOrders((prev) => prev.filter((o) => o.id !== orderId));
-    const taken = DEMO_ORDERS.find((o) => o.id === orderId);
-    if (taken) {
-      setMyOrders((prev) => [
-        ...prev,
-        { ...taken, status: "assigned", driver_id: "drv-1", assigned_at: new Date().toISOString() },
-      ]);
-    }
-    setActiveTab("active");
-    showToast(`Order ${orderId} berhasil diambil!`);
   };
 
   const handleUpdateStatus = async (orderId: string, nextStatus: "on_the_way" | "completed") => {
-    if (isLive) {
-      try {
-        const res = await fetch(`/api/driver/orders/${orderId}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: nextStatus }),
-        });
-        if (res.ok) {
-          await fetchLiveData();
-          if (nextStatus === "completed") {
-            showToast(`Order ${orderId} selesai! Ongkos masuk ke saldo harian.`);
-            setActiveTab("history");
-          } else {
-            showToast(`Status diperbarui: Sedang dalam perjalanan.`);
-          }
-          return;
-        }
-      } catch {}
-    }
+    if (updatingOrderId) return;
+    setUpdatingOrderId(orderId);
 
-    // Demo fallback
+    // Snapshot for rollback in case of error
+    const previousOrders = [...myOrders];
+
+    // INSTANT OPTIMISTIC UI: Update status in UI immediately for snappy response
     setMyOrders((prev) =>
-      prev.map((o) => {
-        if (o.id === orderId) {
-          return {
-            ...o,
-            status: nextStatus,
-            completed_at: nextStatus === "completed" ? new Date().toISOString() : o.completed_at,
-          };
-        }
-        return o;
-      })
+      prev.map((o) => (o.id === orderId ? { ...o, status: nextStatus } : o))
     );
 
     if (nextStatus === "completed") {
-      showToast(`Order ${orderId} selesai! Ongkos masuk ke saldo harian.`);
-      setActiveTab("history");
+      showToast("Order selesai! Masuk ke riwayat.");
     } else {
-      showToast(`Status diperbarui: Sedang dalam perjalanan.`);
+      showToast("Status diperbarui: Sedang dalam perjalanan.");
+    }
+
+    try {
+      const res = await fetch(`/api/driver/orders/${orderId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.order) {
+          setMyOrders((prev) =>
+            prev.map((o) => (o.id === orderId ? { ...o, ...data.order } : o))
+          );
+        }
+        if (nextStatus === "completed") {
+          setActiveTab("history");
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setMyOrders(previousOrders); // Rollback on error
+        showToast(errData.error || "Gagal memperbarui status order.");
+      }
+    } catch {
+      setMyOrders(previousOrders); // Rollback on network failure
+      showToast("Gagal menghubungi server.");
+    } finally {
+      setUpdatingOrderId(null);
     }
   };
 
@@ -275,8 +275,6 @@ export default function DriverDashboardPage() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("anjem_role");
       localStorage.removeItem("anjem_user");
-      localStorage.removeItem("anjem_demo_role");
-      localStorage.removeItem("anjem_demo_user");
     }
     router.push("/masuk");
   };
@@ -358,7 +356,7 @@ export default function DriverDashboardPage() {
           </div>
 
           {!isOnline && (
-            <div className="demo-banner mb-6 bg-amber-50 border-amber-200 text-amber-800">
+            <div className="p-3.5 rounded-xl border mb-6 bg-amber-50 border-amber-200 text-amber-800 flex items-center gap-2.5">
               <AlertCircle size={18} className="flex-shrink-0" />
               <span className="text-xs">
                 <strong>Status Anda sedang Offline.</strong> Anda tidak dapat melihat order
@@ -586,17 +584,33 @@ export default function DriverDashboardPage() {
                               {ord.status === "assigned" ? (
                                 <button
                                   onClick={() => handleUpdateStatus(ord.id, "on_the_way")}
-                                  className="btn btn-primary text-xs py-2 px-3"
+                                  disabled={updatingOrderId === ord.id}
+                                  className="btn btn-primary text-xs py-2 px-3 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                 >
-                                  Mulai Perjalanan →
+                                  {updatingOrderId === ord.id ? (
+                                    <>
+                                      <Loader2 size={13} className="animate-spin" /> Memproses...
+                                    </>
+                                  ) : (
+                                    "Mulai Perjalanan →"
+                                  )}
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => handleUpdateStatus(ord.id, "completed")}
-                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center gap-1.5"
+                                  disabled={updatingOrderId === ord.id}
+                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                 >
-                                  <CheckCircle2 size={14} />
-                                  Selesaikan Order
+                                  {updatingOrderId === ord.id ? (
+                                    <>
+                                      <Loader2 size={13} className="animate-spin" /> Menyelesaikan...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CheckCircle2 size={14} />
+                                      Selesaikan Order
+                                    </>
+                                  )}
                                 </button>
                               )}
                             </div>

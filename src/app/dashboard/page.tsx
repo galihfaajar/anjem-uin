@@ -20,7 +20,6 @@ import {
   RefreshCw,
   Phone,
 } from "lucide-react";
-import { DEMO_ORDERS } from "@/lib/data/demo";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import type { Order } from "@/types";
 import { createClient } from "@/lib/supabase/client";
@@ -80,22 +79,17 @@ export default function CustomerDashboardPage() {
     const init = async () => {
       const ok = await fetchLiveData();
       if (!ok) {
-        // Demo mode fallback
-        if (typeof window !== "undefined") {
-          const stored = localStorage.getItem("anjem_demo_user");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (parsed.name) setUserName(parsed.name);
-            } catch {}
-          }
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push("/masuk");
+          return;
         }
-        setOrders(DEMO_ORDERS);
       }
       setIsLoading(false);
     };
     init();
-  }, [fetchLiveData]);
+  }, [fetchLiveData, router]);
 
   const activeOrders = orders.filter((o) =>
     ["pending", "assigned", "on_the_way"].includes(o.status)
@@ -117,8 +111,6 @@ export default function CustomerDashboardPage() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("anjem_role");
       localStorage.removeItem("anjem_user");
-      localStorage.removeItem("anjem_demo_role");
-      localStorage.removeItem("anjem_demo_user");
     }
     router.push("/masuk");
   };

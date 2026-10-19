@@ -122,16 +122,6 @@ export default function HeroSection() {
               </div>
             </div>
 
-            {/* Demo mode notice */}
-            {siteConfig.isDemoMode && (
-              <div className="demo-banner mt-6">
-                <span>⚠️</span>
-                <span>
-                  Mode Demo — layanan belum beroperasi secara penuh. Data
-                  yang tampil adalah contoh.
-                </span>
-              </div>
-            )}
           </div>
 
           {/* Right — illustration */}
