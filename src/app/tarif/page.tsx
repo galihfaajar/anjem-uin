@@ -19,6 +19,8 @@ import {
 import { formatRupiah, calculateFare } from "@/lib/pricing/calculateFare";
 import { createClient } from "@/lib/supabase/server";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "Tarif Layanan – Anjem UIN",
   description: "Informasi tarif dan zona layanan antar jemput, jastip kuliner, dan pengiriman dokumen Anjem UIN.",

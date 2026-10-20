@@ -183,6 +183,63 @@ export default function Navbar() {
   const isDriver = activeRole === "driver" || pathname.startsWith("/driver");
   const isCustomer = activeRole === "customer" || pathname.startsWith("/dashboard");
 
+  // Track tab query param untuk admin (?tab=fares)
+  const [currentTab, setCurrentTab] = useState<string>("");
+
+  useEffect(() => {
+    const syncTab = () => {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        setCurrentTab(params.get("tab") || "");
+      }
+    };
+    syncTab();
+    window.addEventListener("popstate", syncTab);
+    window.addEventListener("admin_tab_change", syncTab);
+    return () => {
+      window.removeEventListener("popstate", syncTab);
+      window.removeEventListener("admin_tab_change", syncTab);
+    };
+  }, [pathname]);
+
+  const isFaresActive = pathname === "/admin" && currentTab === "fares";
+  const isDriversActive = pathname === "/admin" && currentTab === "drivers";
+  const isLogsActive = pathname === "/admin" && currentTab === "logs";
+  const isReviewsActive = pathname === "/admin" && currentTab === "reviews";
+  const isDashboardActive =
+    pathname === "/admin" &&
+    currentTab !== "fares" &&
+    currentTab !== "drivers" &&
+    currentTab !== "logs" &&
+    currentTab !== "reviews";
+  const isUlasanActive = pathname === "/ulasan";
+
+  const handleAdminNav = (target: "dashboard" | "drivers" | "fares" | "logs" | "reviews") => {
+    setMobileOpen(false);
+    if (pathname === "/admin") {
+      const url = new URL(window.location.href);
+      if (target === "fares") {
+        url.searchParams.set("tab", "fares");
+      } else if (target === "drivers") {
+        url.searchParams.set("tab", "drivers");
+      } else if (target === "logs") {
+        url.searchParams.set("tab", "logs");
+      } else if (target === "reviews") {
+        url.searchParams.set("tab", "reviews");
+      } else {
+        url.searchParams.delete("tab");
+      }
+      window.history.pushState({}, "", url.toString());
+      window.dispatchEvent(new Event("admin_tab_change"));
+    } else {
+      if (target === "fares") router.push("/admin?tab=fares");
+      else if (target === "drivers") router.push("/admin?tab=drivers");
+      else if (target === "logs") router.push("/admin?tab=logs");
+      else if (target === "reviews") router.push("/admin?tab=reviews");
+      else router.push("/admin");
+    }
+  };
+
   return (
     <>
       <nav className="navbar">
@@ -209,38 +266,68 @@ export default function Navbar() {
             {/* Desktop Navigation Links */}
             <div className="hidden lg:flex items-center gap-1">
               {isAdmin ? (
-                // Admin Nav Links
+                // Admin Nav Links: Dashboard, Kelola Driver, Layanan dan Tarif Zona, Ulasan
                 <>
-                  <Link
-                    href="/admin"
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("dashboard")}
                     className={cn(
-                      "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all",
-                      pathname === "/admin"
-                        ? "bg-purple-100 text-purple-700"
-                        : "text-slate-600 hover:bg-slate-100"
+                      "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer",
+                      isDashboardActive
+                        ? "bg-purple-100 text-purple-700 shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                     )}
                   >
-                    Panel Admin
-                  </Link>
-                  <Link
-                    href="/tarif"
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                    Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("drivers")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                      isDriversActive
+                        ? "bg-purple-100 text-purple-700 font-bold shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
                   >
-                    Tarif & Layanan
-                  </Link>
-                  <Link
-                    href="/ulasan"
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                    Kelola Driver
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("fares")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                      isFaresActive
+                        ? "bg-purple-100 text-purple-700 font-bold shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    Layanan dan Tarif Zona
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("logs")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                      isLogsActive
+                        ? "bg-purple-100 text-purple-700 font-bold shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
+                  >
+                    Audit Log Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("reviews")}
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all cursor-pointer",
+                      isReviewsActive
+                        ? "bg-purple-100 text-purple-700 font-bold shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
                   >
                     Ulasan
-                  </Link>
-                  <Link
-                    href="/"
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all flex items-center gap-1"
-                  >
-                    Lihat Web Publik
-                    <ExternalLink size={12} />
-                  </Link>
+                  </button>
                 </>
               ) : isDriver ? (
                 // Driver Nav Links
@@ -490,34 +577,66 @@ export default function Navbar() {
                   <div className="px-3 py-2 text-xs font-bold text-purple-600 uppercase tracking-wider">
                     Panel Pengelola
                   </div>
-                  <Link
-                    href="/admin"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-bold bg-purple-50 text-purple-700"
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("dashboard")}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl font-bold transition-all cursor-pointer",
+                      isDashboardActive
+                        ? "bg-purple-50 text-purple-700"
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
                   >
-                    Dashboard Admin
-                  </Link>
-                  <Link
-                    href="/tarif"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-medium text-slate-700 hover:bg-slate-50"
+                    Dashboard
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("drivers")}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer",
+                      isDriversActive
+                        ? "bg-purple-50 text-purple-700 font-bold"
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
                   >
-                    Tarif & Layanan
-                  </Link>
-                  <Link
-                    href="/ulasan"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-medium text-slate-700 hover:bg-slate-50"
+                    Kelola Driver
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("fares")}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer",
+                      isFaresActive
+                        ? "bg-purple-50 text-purple-700 font-bold"
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
                   >
-                    Ulasan Pelanggan
-                  </Link>
-                  <Link
-                    href="/"
-                    onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-medium text-blue-600 hover:bg-blue-50"
+                    Layanan dan Tarif Zona
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("logs")}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer",
+                      isLogsActive
+                        ? "bg-purple-50 text-purple-700 font-bold"
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
                   >
-                    Buka Beranda Publik →
-                  </Link>
+                    Audit Log Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminNav("reviews")}
+                    className={cn(
+                      "w-full text-left px-4 py-2.5 rounded-xl font-medium transition-all cursor-pointer",
+                      isReviewsActive
+                        ? "bg-purple-50 text-purple-700 font-bold"
+                        : "text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    Ulasan
+                  </button>
                 </>
               ) : isDriver ? (
                 <>

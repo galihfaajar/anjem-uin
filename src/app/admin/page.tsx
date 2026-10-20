@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/layout/Navbar";
@@ -24,14 +24,76 @@ import {
   LogOut,
   Edit,
   RefreshCw,
+  Wallet,
+  Calendar,
+  Save,
+  RotateCcw,
+  Check,
+  UtensilsCrossed,
+  ShoppingBasket,
+  Package,
+  Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
+import { formatDate } from "@/lib/utils";
 import type { Order, Driver, DriverStatus, OrderStatus, Service, FareZone } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
+interface AdminReview {
+  id: string;
+  order_id: string;
+  rating: number;
+  comment: string;
+  is_approved: boolean;
+  created_at: string;
+  service_name: string;
+  customer_name: string;
+  customer_phone: string;
+  driver_name: string;
+  driver_plate: string;
+  route_summary?: string | null;
+}
+
 export default function AdminDashboardPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"orders" | "drivers" | "fares" | "logs">("orders");
+  const [activeTab, setActiveTab] = useState<"orders" | "drivers" | "fares" | "logs" | "reviews">("orders");
+
+  // Sinkronisasi activeTab dengan query param (?tab=fares dsb) & event navbar
+  useEffect(() => {
+    const handleUrlTab = () => {
+      if (typeof window === "undefined") return;
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get("tab");
+      if (t === "fares" || t === "drivers" || t === "orders" || t === "logs" || t === "reviews") {
+        setActiveTab(t);
+      } else if (!t) {
+        setActiveTab("orders");
+      }
+    };
+
+    handleUrlTab();
+    window.addEventListener("popstate", handleUrlTab);
+    window.addEventListener("admin_tab_change", handleUrlTab);
+    return () => {
+      window.removeEventListener("popstate", handleUrlTab);
+      window.removeEventListener("admin_tab_change", handleUrlTab);
+    };
+  }, []);
+
+  const handleTabChange = (tab: "orders" | "drivers" | "fares" | "logs" | "reviews") => {
+    setActiveTab(tab);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (tab === "orders") {
+        url.searchParams.delete("tab");
+      } else {
+        url.searchParams.set("tab", tab);
+      }
+      window.history.pushState({}, "", url.toString());
+      window.dispatchEvent(new Event("admin_tab_change"));
+    }
+  };
 
   // State Data
   const [orders, setOrders] = useState<Order[]>([]);
@@ -45,13 +107,42 @@ export default function AdminDashboardPage() {
   const [toastMsg, setToastMsg] = useState("");
   const [isLive, setIsLive] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(""), 3500);
+  }, []);
+
+  // State Ulasan Pelanggan
+  const [reviews, setReviews] = useState<AdminReview[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [reviewSearch, setReviewSearch] = useState("");
+  const [reviewRatingFilter, setReviewRatingFilter] = useState<number | "all">("all");
+  const [reviewToDelete, setReviewToDelete] = useState<AdminReview | null>(null);
+  const [isDeletingReview, setIsDeletingReview] = useState(false);
+
+  const fetchReviews = useCallback(async () => {
+    setIsLoadingReviews(true);
+    try {
+      const res = await fetch("/api/admin/reviews");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reviews) {
+          setReviews(data.reviews);
+        }
+      }
+    } catch {}
+    setIsLoadingReviews(false);
+  }, []);
 
   const fetchLiveData = useCallback(async () => {
     setIsLoadingData(true);
     try {
-      const [ordersRes, driversRes] = await Promise.all([
+      const [ordersRes, driversRes, reviewsRes] = await Promise.all([
         fetch("/api/admin/orders?limit=100"),
         fetch("/api/admin/drivers"),
+        fetch("/api/admin/reviews"),
       ]);
 
       if (ordersRes.status === 401 || driversRes.status === 401 || ordersRes.status === 403 || driversRes.status === 403) {
@@ -85,14 +176,35 @@ export default function AdminDashboardPage() {
           setDrivers(flatDrivers);
         }
 
+        if (reviewsRes.ok) {
+          const revData = await reviewsRes.json();
+          if (revData.reviews) {
+            setReviews(revData.reviews);
+          }
+        }
+
         // Fetch services & fare zones from Supabase
         const supabase = createClient();
         const [{ data: sData }, { data: zData }] = await Promise.all([
-          supabase.from("services").select("*").order("name"),
-          supabase.from("fare_zones").select("*").order("min_km"),
+          supabase.from("services").select("*").order("sort_order"),
+          supabase.from("fare_zones").select("*").order("sort_order"),
         ]);
-        if (sData) setServices(sData);
-        if (zData) setFareZones(zData);
+        if (sData) {
+          setServices(sData);
+          const initialSvcs: Record<string, { extra_fee: number }> = {};
+          sData.forEach((s: Service) => {
+            initialSvcs[s.id] = { extra_fee: s.extra_fee };
+          });
+          setEditedServices(initialSvcs);
+        }
+        if (zData) {
+          setFareZones(zData);
+          const initialZones: Record<string, { base_price: number; per_km_price: number }> = {};
+          zData.forEach((z: FareZone) => {
+            initialZones[z.id] = { base_price: z.base_price, per_km_price: z.per_km_price };
+          });
+          setEditedZones(initialZones);
+        }
 
         setIsLive(true);
       }
@@ -104,18 +216,495 @@ export default function AdminDashboardPage() {
     fetchLiveData();
   }, [fetchLiveData]);
 
+  // ─── REFRESH ORDERS & DRIVERS RINGAN (SILENT / TANPA SPINNER) ───
+  const fetchOrdersRealtime = useCallback(async () => {
+    try {
+      const [ordersRes, driversRes] = await Promise.all([
+        fetch("/api/admin/orders?limit=100"),
+        fetch("/api/admin/drivers"),
+      ]);
+
+      if (ordersRes.ok) {
+        const ordersData = await ordersRes.json();
+        if (ordersData.orders) {
+          const flatOrders = ordersData.orders.map((o: any) => ({
+            ...o,
+            customer_name: o.customer?.full_name || o.customer_name || "Tamu",
+            customer_phone: o.customer?.phone || o.customer_phone || "-",
+            service_name: o.service?.name || o.service_name || "-",
+            driver_name: o.driver_profile?.profile?.full_name || o.driver_name || null,
+            driver_plate: o.driver_profile?.plate_number || o.driver_plate || null,
+          }));
+          setOrders(flatOrders);
+        }
+      }
+
+      if (driversRes.ok) {
+        const driversData = await driversRes.json();
+        if (driversData.drivers) {
+          const flatDrivers = driversData.drivers.map((d: any) => ({
+            ...d,
+            profile: {
+              full_name: d.profile?.full_name || "Driver",
+              avatar_url: d.profile?.avatar_url || null,
+            },
+          }));
+          setDrivers(flatDrivers);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // ─── REALTIME SUPABASE SUBSCRIPTION + 5 DETIK LIGHT FALLBACK ───
+  useEffect(() => {
+    if (!isLive) return;
+
+    const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const channel = supabase
+      .channel("admin_dashboard_realtime_pool")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "orders",
+        },
+        (payload) => {
+          const newOrder = payload.new as any;
+          if (newOrder?.id) {
+            showToast(`🔔 Pesanan baru: ${newOrder.id} masuk!`);
+          }
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrdersRealtime();
+          }, 300);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+        },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated?.id && updated?.status) {
+            showToast(`🔄 Order ${updated.id}: Status ${String(updated.status).toUpperCase()}`);
+          }
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrdersRealtime();
+          }, 300);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "orders",
+        },
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrdersRealtime();
+          }, 300);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "order_events",
+        },
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrdersRealtime();
+          }, 300);
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "driver_profiles",
+        },
+        () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            fetchOrdersRealtime();
+          }, 300);
+        }
+      )
+      .subscribe();
+
+    // Polling fallback setiap 5 detik agar data admin selalu sinkron
+    const interval = setInterval(() => {
+      fetchOrdersRealtime();
+    }, 5000);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
+  }, [isLive, fetchOrdersRealtime, showToast]);
+
   const [auditLogs, setAuditLogs] = useState<
     { id: string; action: string; target: string; time: string; admin: string }[]
   >([]);
 
-  const showToast = (msg: string) => {
-    setToastMsg(msg);
-    setTimeout(() => setToastMsg(""), 3000);
+  // State Edit Tarif Manual (Admin)
+  const [editedZones, setEditedZones] = useState<Record<string, { base_price: number; per_km_price: number }>>({});
+  const [editedServices, setEditedServices] = useState<Record<string, { extra_fee: number }>>({});
+  const [isSavingFares, setIsSavingFares] = useState(false);
+  const [savingItemKey, setSavingItemKey] = useState<string | null>(null);
+
+  const handleZonePriceChange = (zoneId: string, field: "base_price" | "per_km_price", val: string) => {
+    const num = Math.max(0, parseInt(val) || 0);
+    setEditedZones((prev) => ({
+      ...prev,
+      [zoneId]: {
+        base_price: prev[zoneId]?.base_price ?? 0,
+        per_km_price: prev[zoneId]?.per_km_price ?? 0,
+        [field]: num,
+      },
+    }));
   };
 
-  // Filtered orders
-  const filteredOrders = useMemo(() => {
+  const handleServiceFeeChange = (svcId: string, val: string) => {
+    const num = Math.max(0, parseInt(val) || 0);
+    setEditedServices((prev) => ({
+      ...prev,
+      [svcId]: {
+        extra_fee: num,
+      },
+    }));
+  };
+
+  // Cek apakah ada perubahan harga yang belum disimpan
+  const hasUnsavedFares = useMemo(() => {
+    const zChanged = fareZones.some((z) => {
+      const ed = editedZones[z.id];
+      if (!ed) return false;
+      return ed.base_price !== z.base_price || ed.per_km_price !== z.per_km_price;
+    });
+    const sChanged = services.some((s) => {
+      const ed = editedServices[s.id];
+      if (!ed) return false;
+      return ed.extra_fee !== s.extra_fee;
+    });
+    return zChanged || sChanged;
+  }, [fareZones, services, editedZones, editedServices]);
+
+  // Simpan satu zona tarif
+  const handleSaveSingleZone = async (zone: FareZone) => {
+    const edit = editedZones[zone.id];
+    if (!edit) return;
+    setSavingItemKey(`zone-${zone.id}`);
+    try {
+      const res = await fetch("/api/admin/fares", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zones: [{ id: zone.id, base_price: edit.base_price, per_km_price: edit.per_km_price }],
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Tarif ${zone.name} berhasil disimpan!`);
+        if (data.fareZones) setFareZones(data.fareZones);
+        setAuditLogs((prev) => [
+          {
+            id: `log-${Date.now()}`,
+            action: "UPDATE_ZONE_PRICE",
+            target: `${zone.name} diubah ke ${formatRupiah(edit.base_price)}`,
+            time: new Date().toLocaleTimeString("id-ID") + " WIB",
+            admin: "Admin Pusat",
+          },
+          ...prev,
+        ]);
+      } else {
+        showToast(data.error || "Gagal menyimpan tarif zona.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
+    } finally {
+      setSavingItemKey(null);
+    }
+  };
+
+  // Simpan satu layanan
+  const handleSaveSingleService = async (svc: Service) => {
+    const edit = editedServices[svc.id];
+    if (!edit) return;
+    setSavingItemKey(`svc-${svc.id}`);
+    try {
+      const res = await fetch("/api/admin/fares", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          services: [{ id: svc.id, extra_fee: edit.extra_fee }],
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Biaya ${svc.name} berhasil disimpan!`);
+        if (data.services) setServices(data.services);
+        setAuditLogs((prev) => [
+          {
+            id: `log-${Date.now()}`,
+            action: "UPDATE_SERVICE_FEE",
+            target: `${svc.name} diubah ke ${formatRupiah(edit.extra_fee)}`,
+            time: new Date().toLocaleTimeString("id-ID") + " WIB",
+            admin: "Admin Pusat",
+          },
+          ...prev,
+        ]);
+      } else {
+        showToast(data.error || "Gagal menyimpan biaya layanan.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
+    } finally {
+      setSavingItemKey(null);
+    }
+  };
+
+  // Simpan seluruh konfigurasi tarif sekaligus
+  const handleSaveAllFares = async () => {
+    setIsSavingFares(true);
+    try {
+      const zonesPayload = fareZones.map((z) => ({
+        id: z.id,
+        base_price: editedZones[z.id]?.base_price ?? z.base_price,
+        per_km_price: editedZones[z.id]?.per_km_price ?? z.per_km_price,
+      }));
+
+      const servicesPayload = services.map((s) => ({
+        id: s.id,
+        extra_fee: editedServices[s.id]?.extra_fee ?? s.extra_fee,
+      }));
+
+      const res = await fetch("/api/admin/fares", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zones: zonesPayload,
+          services: servicesPayload,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast("Seluruh tarif & biaya layanan berhasil disimpan sebagai harga terbaru!");
+        if (data.fareZones) setFareZones(data.fareZones);
+        if (data.services) setServices(data.services);
+        setAuditLogs((prev) => [
+          {
+            id: `log-${Date.now()}`,
+            action: "UPDATE_ALL_FARES",
+            target: "Seluruh tarif zona & layanan diperbarui oleh admin",
+            time: new Date().toLocaleTimeString("id-ID") + " WIB",
+            admin: "Admin Pusat",
+          },
+          ...prev,
+        ]);
+      } else {
+        showToast(data.error || "Gagal menyimpan konfigurasi tarif.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
+    } finally {
+      setIsSavingFares(false);
+    }
+  };
+
+  // Kembalikan form ke nilai tersimpan
+  const handleResetFares = () => {
+    const resetZ: Record<string, { base_price: number; per_km_price: number }> = {};
+    fareZones.forEach((z) => {
+      resetZ[z.id] = { base_price: z.base_price, per_km_price: z.per_km_price };
+    });
+    setEditedZones(resetZ);
+
+    const resetS: Record<string, { extra_fee: number }> = {};
+    services.forEach((s) => {
+      resetS[s.id] = { extra_fee: s.extra_fee };
+    });
+    setEditedServices(resetS);
+    showToast("Form tarif dikembalikan ke data tersimpan.");
+  };
+
+
+  // Helper format tanggal lokal (YYYY-MM-DD)
+  const getLocalDateKey = (isoString?: string | null): string => {
+    if (!isoString) return "";
+    try {
+      const clean = isoString.includes("T") ? isoString : isoString.replace(" ", "T");
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) {
+        const match = isoString.match(/^\d{4}-\d{2}-\d{2}/);
+        return match ? match[0] : "";
+      }
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    } catch {
+      return "";
+    }
+  };
+
+  const getTodayDateKey = (): string => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  // Helper tampilan tanggal & jam order di tabel
+  const formatOrderDateTime = (isoString?: string | null) => {
+    if (!isoString) return { date: "-", time: "-" };
+    try {
+      const clean = isoString.includes("T") ? isoString : isoString.replace(" ", "T");
+      const d = new Date(clean);
+      if (isNaN(d.getTime())) {
+        return { date: isoString.slice(0, 10), time: "-" };
+      }
+      const date = d.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+      const time =
+        d.toLocaleTimeString("id-ID", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }) + " WIB";
+      return { date, time };
+    } catch {
+      return { date: isoString || "-", time: "-" };
+    }
+  };
+
+  // Tanggal untuk filter penghasilan harian (default: hari ini)
+  const [revenueDate, setRevenueDate] = useState<string>(() => getTodayDateKey());
+
+  // ─── FILTER RENTANG TANGGAL GLOBAL (null = semua data / clear filter) ───
+  type DateRangeOption = "today" | "week" | "month" | "custom" | null;
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRangeOption>(null);
+
+  const dateRangeStartKey = useMemo((): string | null => {
+    const now = new Date();
+    if (dateRangeFilter === "today") {
+      return getTodayDateKey();
+    } else if (dateRangeFilter === "week") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 7);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    } else if (dateRangeFilter === "month") {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 30);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    } else if (dateRangeFilter === "custom") {
+      return revenueDate;
+    }
+    return null; // null = no date filter, show all
+  }, [dateRangeFilter, revenueDate]);
+
+  const todayKey = useMemo(() => getTodayDateKey(), []);
+
+  // Orders yang melewati filter rentang tanggal (dipakai di stat cards & tabel)
+  const dateFilteredOrders = useMemo(() => {
+    if (!dateRangeFilter) return orders;
     return orders.filter((o) => {
+      const orderDateKey = getLocalDateKey(o.created_at);
+      if (!orderDateKey) return true;
+      if (dateRangeFilter === "today") {
+        return orderDateKey === todayKey;
+      }
+      if (dateRangeFilter === "custom") {
+        return orderDateKey === revenueDate;
+      }
+      return orderDateKey >= dateRangeStartKey!;
+    });
+  }, [orders, dateRangeFilter, dateRangeStartKey, todayKey, revenueDate]);
+
+  // Perhitungan order berstatus completed dalam rentang filter
+  const allCompletedOrders = useMemo(() => {
+    return dateFilteredOrders.filter((o) => o.status === "completed");
+  }, [dateFilteredOrders]);
+
+  // Penghasilan riil dari completed orders dalam rentang filter aktif
+  const filteredCompletedEarnings = useMemo(() => {
+    return allCompletedOrders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
+  }, [allCompletedOrders]);
+
+  // All-time untuk footer card (seluruh data tanpa filter)
+  const allTimeCompletedOrders = useMemo(() => orders.filter((o) => o.status === "completed"), [orders]);
+  const allTimeCompletedEarnings = useMemo(() => {
+    return allTimeCompletedOrders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
+  }, [allTimeCompletedOrders]);
+
+  // Khusus hari ini (untuk komparasi)
+  const dailyCompletedOrders = useMemo(() => {
+    return allTimeCompletedOrders.filter((o) => {
+      const orderDateKey = getLocalDateKey(o.completed_at || o.created_at);
+      return orderDateKey === todayKey;
+    });
+  }, [allTimeCompletedOrders, todayKey]);
+
+  const dailyCompletedEarnings = useMemo(() => {
+    return dailyCompletedOrders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
+  }, [dailyCompletedOrders]);
+
+  const formattedRevenueShort = useMemo(() => {
+    try {
+      const parts = revenueDate.split("-");
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return d.toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+      }
+    } catch {}
+    return revenueDate;
+  }, [revenueDate]);
+
+  const formattedRevenueDate = useMemo(() => {
+    try {
+      const parts = revenueDate.split("-");
+      if (parts.length === 3) {
+        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+      }
+    } catch {}
+    return revenueDate;
+  }, [revenueDate]);
+
+  // Label rentang tanggal untuk ditampilkan
+  const dateRangeLabel = useMemo(() => {
+    if (dateRangeFilter === "today") return "Hari Ini";
+    if (dateRangeFilter === "week") return "1 Minggu";
+    if (dateRangeFilter === "month") return "1 Bulan";
+    if (dateRangeFilter === "custom") return `Tanggal: ${formattedRevenueShort}`;
+    return null;
+  }, [dateRangeFilter, formattedRevenueShort]);
+
+  // Filtered orders (kombinasi filter tanggal + status + search)
+  const filteredOrders = useMemo(() => {
+    return dateFilteredOrders.filter((o) => {
       if (statusFilter !== "all" && o.status !== statusFilter) return false;
       if (searchOrder.trim()) {
         const q = searchOrder.toLowerCase();
@@ -126,7 +715,65 @@ export default function AdminDashboardPage() {
       }
       return true;
     });
-  }, [orders, statusFilter, searchOrder]);
+  }, [dateFilteredOrders, statusFilter, searchOrder]);
+
+  // Filter & Skor Ulasan
+  const filteredReviews = useMemo(() => {
+    return reviews.filter((r) => {
+      if (reviewRatingFilter !== "all" && r.rating !== reviewRatingFilter) {
+        return false;
+      }
+      if (reviewSearch.trim()) {
+        const q = reviewSearch.toLowerCase();
+        const matchesCustomer = (r.customer_name || "").toLowerCase().includes(q);
+        const matchesDriver = (r.driver_name || "").toLowerCase().includes(q);
+        const matchesOrder = (r.order_id || "").toLowerCase().includes(q);
+        const matchesComment = (r.comment || "").toLowerCase().includes(q);
+        const matchesService = (r.service_name || "").toLowerCase().includes(q);
+        return matchesCustomer || matchesDriver || matchesOrder || matchesComment || matchesService;
+      }
+      return true;
+    });
+  }, [reviews, reviewRatingFilter, reviewSearch]);
+
+  const reviewAvgScore = useMemo(() => {
+    if (reviews.length === 0) return "5.0";
+    const sum = reviews.reduce((acc, r) => acc + r.rating, 0);
+    return (sum / reviews.length).toFixed(1);
+  }, [reviews]);
+
+  // Hapus Ulasan (Admin)
+  const handleConfirmDeleteReview = async () => {
+    if (!reviewToDelete) return;
+    setIsDeletingReview(true);
+    try {
+      const res = await fetch(`/api/admin/reviews?id=${encodeURIComponent(reviewToDelete.id)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setReviews((prev) => prev.filter((r) => r.id !== reviewToDelete.id));
+        setAuditLogs((prev) => [
+          {
+            id: `log-${Date.now()}`,
+            action: "DELETE_REVIEW",
+            target: `Hapus ulasan dari ${reviewToDelete.customer_name} (${reviewToDelete.rating}★)`,
+            time: new Date().toLocaleTimeString("id-ID") + " WIB",
+            admin: "Admin Pusat",
+          },
+          ...prev,
+        ]);
+        showToast("Ulasan berhasil dihapus!");
+        setReviewToDelete(null);
+      } else {
+        showToast(data.error || "Gagal menghapus ulasan.");
+      }
+    } catch {
+      showToast("Gagal menghubungi server.");
+    } finally {
+      setIsDeletingReview(false);
+    }
+  };
 
   // Driver actions
   const handleDriverStatus = async (driverId: string, newStatus: DriverStatus) => {
@@ -188,10 +835,16 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // CSV Export
+  // CSV Export — mengikuti filter aktif (dateRangeFilter + statusFilter + searchOrder)
   const handleExportCSV = () => {
+    // Gunakan filteredOrders agar CSV sesuai filter yang sedang aktif.
+    // Jika semua filter clear maka filteredOrders = seluruh data.
+    const exportData = filteredOrders;
+
     const headers = [
       "ID Order",
+      "Tanggal",
+      "Jam",
       "Nama Pelanggan",
       "No Telepon",
       "Layanan",
@@ -199,24 +852,31 @@ export default function AdminDashboardPage() {
       "Titik Tujuan",
       "Jarak (km)",
       "Ongkos (Rp)",
+      "Driver",
       "Metode Pembayaran",
       "Status",
-      "Waktu Dibuat",
+      "Waktu ISO",
     ];
 
-    const rows = orders.map((o) => [
-      o.id,
-      `"${o.customer_name || ""}"`,
-      `"${o.customer_phone || ""}"`,
-      `"${o.service_name || ""}"`,
-      `"${o.pickup_name}"`,
-      `"${o.dropoff_name}"`,
-      o.distance_km,
-      o.fare,
-      o.payment_method,
-      o.status,
-      o.created_at,
-    ]);
+    const rows = exportData.map((o) => {
+      const dt = formatOrderDateTime(o.created_at);
+      return [
+        o.id,
+        `"${dt.date}"`,
+        `"${dt.time}"`,
+        `"${o.customer_name || ""}"`,
+        `"${o.customer_phone || ""}"`,
+        `"${o.service_name || ""}"`,
+        `"${o.pickup_name}"`,
+        `"${o.dropoff_name}"`,
+        o.distance_km,
+        o.fare,
+        `"${o.driver_name || "-"}"`,
+        o.payment_method,
+        o.status,
+        `"${o.created_at || ""}"`,
+      ];
+    });
 
     const csvContent =
       "data:text/csv;charset=utf-8," +
@@ -225,11 +885,14 @@ export default function AdminDashboardPage() {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `laporan_order_anjem_uin_${new Date().toISOString().slice(0, 10)}.csv`);
+    // Nama file menyertakan info filter agar mudah diidentifikasi
+    const filterSuffix = dateRangeFilter ? `_${dateRangeFilter}` : "_semua";
+    link.setAttribute("download", `laporan_order_anjem_uin${filterSuffix}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast("Laporan CSV berhasil diunduh.");
+    const filterDesc = dateRangeLabel ? ` (${dateRangeLabel})` : " (Semua Data)";
+    showToast(`CSV${filterDesc} berhasil diunduh — ${exportData.length} order.`);
   };
 
   const handleLogout = async () => {
@@ -272,8 +935,12 @@ export default function AdminDashboardPage() {
                     Panel Pengelola Resmi
                   </span>
                   {isLive && (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                      ● Database Live
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-2xs">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      Realtime Otomatis
                     </span>
                   )}
                 </div>
@@ -298,10 +965,14 @@ export default function AdminDashboardPage() {
               </button>
               <button
                 onClick={handleExportCSV}
-                className="btn btn-secondary text-xs flex items-center gap-1.5"
+                className="btn btn-secondary text-xs flex items-center gap-1.5 relative group"
+                title={dateRangeLabel ? `Ekspor CSV: ${dateRangeLabel}` : "Ekspor CSV: Semua Data"}
               >
                 <Download size={14} />
                 Ekspor CSV
+                {dateRangeFilter && (
+                  <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-blue-500 border border-white" />
+                )}
               </button>
               <button
                 onClick={handleLogout}
@@ -313,81 +984,298 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+          {/* ─── FILTER TANGGAL GLOBAL ─── */}
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 mr-1">
+              <Filter size={13} className="text-slate-400" />
+              Filter Periode:
+            </div>
+            {([
+              { key: "today" as const, label: "Hari Ini" },
+              { key: "week" as const, label: "1 Minggu" },
+              { key: "month" as const, label: "1 Bulan" },
+            ] as { key: "today" | "week" | "month"; label: string }[]).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDateRangeFilter(dateRangeFilter === key ? null : key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border cursor-pointer ${
+                  dateRangeFilter === key
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/20"
+                    : "bg-white text-slate-600 border-slate-200 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50"
+                }`}
+              >
+                <Calendar size={11} className={dateRangeFilter === key ? "text-blue-200" : "text-slate-400"} />
+                {label}
+              </button>
+            ))}
+            {dateRangeFilter ? (
+              <button
+                type="button"
+                onClick={() => setDateRangeFilter(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border cursor-pointer bg-white text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <XCircle size={12} />
+                Clear Filter (Semua Data)
+              </button>
+            ) : (
+              <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 border border-slate-200/80 px-2.5 py-1 rounded-full">
+                Menampilkan seluruh data ({orders.length} order)
+              </span>
+            )}
+            {dateRangeFilter && (
+              <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full ml-auto">
+                📊 Menampilkan data: <strong>{dateRangeLabel}</strong> — {dateFilteredOrders.length} order
+              </span>
+            )}
+          </div>
+
           {/* Stat Overview Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-xs text-slate-400 font-semibold block">Total Order</span>
-              <span className="text-2xl font-extrabold text-slate-900">{orders.length}</span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">Semua status</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+            {/* Card 1: Penghasilan — menjumlahkan real penghasilan sesuai filter */}
+            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 overflow-hidden transition-all ${
+              dateRangeFilter ? "border-emerald-300 ring-1 ring-emerald-100" : "border-slate-200"
+            }`}>
+              <div>
+                <div className="flex items-center justify-between gap-1 mb-1.5">
+                  <span className="text-xs text-slate-500 font-bold flex items-center gap-1.5">
+                    <Wallet size={13} className="text-emerald-600 shrink-0" />
+                    Penghasilan
+                  </span>
+
+                  {/* Label periode atau pemilih tanggal */}
+                  {dateRangeFilter ? (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg whitespace-nowrap">
+                      <Calendar size={10} className="text-emerald-500 shrink-0" />
+                      {dateRangeLabel}
+                    </span>
+                  ) : (
+                    <div className="relative inline-flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => dateInputRef.current?.showPicker?.()}
+                        className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200/90 active:bg-slate-200 px-2 py-0.5 rounded-lg border border-slate-200/80 transition-all cursor-pointer shadow-2xs"
+                        title="Pilih tanggal tertentu"
+                      >
+                        <Calendar size={11} className="text-emerald-600 shrink-0" />
+                        <span>Semua Waktu</span>
+                      </button>
+                      <input
+                        ref={dateInputRef}
+                        type="date"
+                        value={revenueDate}
+                        onChange={(e) => {
+                          setRevenueDate(e.target.value);
+                          setDateRangeFilter("custom");
+                        }}
+                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                        tabIndex={-1}
+                        aria-label="Pilih tanggal penghasilan"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Angka penghasilan utama: menjumlahkan real penghasilan dari order */}
+                <span className="text-2xl font-extrabold text-emerald-600 tracking-tight block">
+                  {formatRupiah(filteredCompletedEarnings)}
+                </span>
+
+                {/* Subtitle dinamis */}
+                <div className="flex items-center justify-between text-[11px] text-slate-400 mt-0.5">
+                  <span className="truncate">
+                    {dateRangeFilter ? (
+                      <>
+                        {dateRangeLabel}:{" "}
+                        <strong className="text-slate-700">
+                          {allCompletedOrders.length} selesai
+                        </strong>
+                      </>
+                    ) : (
+                      <>
+                        Total pesanan selesai:{" "}
+                        <strong className="text-slate-700">{allCompletedOrders.length} selesai</strong>
+                      </>
+                    )}
+                  </span>
+                  {dateRangeFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setDateRangeFilter(null)}
+                      className="text-[10px] font-bold text-emerald-600 hover:text-emerald-700 hover:underline shrink-0 ml-1"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                <span>{dateRangeFilter ? "Semua waktu:" : "Hari ini:"}</span>
+                <span className="font-bold text-slate-700">
+                  {dateRangeFilter
+                    ? formatRupiah(allTimeCompletedEarnings)
+                    : `${formatRupiah(dailyCompletedEarnings)} (${dailyCompletedOrders.length} selesai)`}
+                </span>
+              </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-xs text-slate-400 font-semibold block">Order Menunggu</span>
-              <span className="text-2xl font-extrabold text-amber-600">
-                {orders.filter((o) => o.status === "pending").length}
-              </span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">Perlu konfirmasi</span>
+            {/* Card 2: Total Order */}
+            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between transition-all ${
+              dateRangeFilter ? "border-blue-200 ring-1 ring-blue-100" : "border-slate-200"
+            }`}>
+              <div>
+                <span className="text-xs text-slate-400 font-semibold block mb-1">Total Order</span>
+                <span className="text-2xl font-extrabold text-slate-900">{dateFilteredOrders.length}</span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">
+                  {dateRangeLabel ? dateRangeLabel : "Semua status"}
+                </span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Selesai:</span>
+                <span className="font-bold text-emerald-600">{allCompletedOrders.length} order</span>
+              </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-xs text-slate-400 font-semibold block">Driver Aktif</span>
-              <span className="text-2xl font-extrabold text-emerald-600">
-                {drivers.filter((d) => d.status === "approved").length}
-              </span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">Telah diverifikasi</span>
+            {/* Card 3: Order Menunggu */}
+            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between transition-all ${
+              dateRangeFilter ? "border-blue-200 ring-1 ring-blue-100" : "border-slate-200"
+            }`}>
+              <div>
+                <span className="text-xs text-slate-400 font-semibold block mb-1">Order Menunggu</span>
+                <span className="text-2xl font-extrabold text-amber-600">
+                  {dateFilteredOrders.filter((o) => o.status === "pending").length}
+                </span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">
+                  {dateRangeLabel ? `Dalam ${dateRangeLabel.toLowerCase()}` : "Perlu konfirmasi"}
+                </span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Proses jalan:</span>
+                <span className="font-bold text-blue-600">
+                  {dateFilteredOrders.filter((o) => o.status === "assigned" || o.status === "on_the_way").length}
+                </span>
+              </div>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <span className="text-xs text-slate-400 font-semibold block">Rating Kepuasan</span>
-              <span className="text-2xl font-extrabold text-blue-600">5.0 / 5.0</span>
-              <span className="text-[11px] text-slate-400 block mt-0.5">Dari ulasan terverifikasi</span>
+            {/* Card 4: Driver Aktif */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <div>
+                <span className="text-xs text-slate-400 font-semibold block mb-1">Driver Aktif</span>
+                <span className="text-2xl font-extrabold text-emerald-600">
+                  {drivers.filter((d) => d.status === "approved").length}
+                </span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">Telah diverifikasi</span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Driver online:</span>
+                <span className="font-bold text-emerald-600">
+                  {drivers.filter((d) => d.is_online).length}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 5: Rating Kepuasan */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+              <div>
+                <span className="text-xs text-slate-400 font-semibold block mb-1">Rating Kepuasan</span>
+                <span className="text-2xl font-extrabold text-blue-600">5.0 / 5.0</span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">Dari ulasan terverifikasi</span>
+              </div>
+              <div className="pt-2 mt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+                <span>Kepuasan:</span>
+                <span className="font-bold text-blue-600">
+                  {reviews.length > 0 ? `⭐ ${reviewAvgScore} (${reviews.length} ulasan)` : "100% Positif"}
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* Navigation Tabs */}
+          {/* Main Content Area */}
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden mb-8">
-            <div className="flex border-b border-slate-100 bg-slate-50/50 p-2 gap-2 overflow-x-auto">
-              <button
-                onClick={() => setActiveTab("orders")}
-                className={`py-2 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                  activeTab === "orders"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                📋 Semua Order ({orders.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("drivers")}
-                className={`py-2 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                  activeTab === "drivers"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                🛵 Verifikasi Driver ({drivers.length})
-              </button>
-              <button
-                onClick={() => setActiveTab("fares")}
-                className={`py-2 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                  activeTab === "fares"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                ⚙️ Layanan & Tarif Zona
-              </button>
-              <button
-                onClick={() => setActiveTab("logs")}
-                className={`py-2 px-4 text-xs font-bold rounded-xl whitespace-nowrap transition-all ${
-                  activeTab === "logs"
-                    ? "bg-white text-blue-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                🛡️ Audit Log Admin ({auditLogs.length})
-              </button>
-            </div>
+            {activeTab === "orders" && (
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-4.5 bg-blue-600 rounded-full inline-block" />
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                    📋 Semua Order
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
+                      {filteredOrders.length}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full ml-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Live Sync
+                    </span>
+                    {dateRangeLabel && (
+                      <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                        {dateRangeLabel}
+                      </span>
+                    )}
+                  </h3>
+                </div>
+                {/* Tombol Export CSV inline di header orders (shortcut) */}
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="text-xs font-semibold text-slate-600 hover:text-blue-600 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white transition-all cursor-pointer"
+                  title={dateRangeLabel ? `Ekspor CSV: ${dateRangeLabel}` : "Ekspor CSV: Semua Data"}
+                >
+                  <Download size={12} />
+                  <span>CSV{dateRangeFilter ? ` (${dateRangeLabel})` : " (Semua)"}</span>
+                </button>
+              </div>
+            )}
+
+            {activeTab === "drivers" && (
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-4.5 bg-purple-600 rounded-full inline-block" />
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                    🛵 Verifikasi & Kelola Driver
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
+                      {drivers.length}
+                    </span>
+                  </h3>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "logs" && (
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-4.5 bg-purple-600 rounded-full inline-block" />
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                    🛡️ Audit Log Admin
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
+                      {auditLogs.length}
+                    </span>
+                  </h3>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "reviews" && (
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-4.5 bg-purple-600 rounded-full inline-block" />
+                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                    ⭐ Kelola Ulasan Pelanggan
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
+                      {reviews.length}
+                    </span>
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={fetchReviews}
+                  disabled={isLoadingReviews}
+                  className="text-xs font-semibold text-slate-600 hover:text-blue-600 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white transition-all cursor-pointer"
+                  title="Segarkan daftar ulasan"
+                >
+                  <RefreshCw size={12} className={isLoadingReviews ? "animate-spin text-blue-600" : ""} />
+                  <span>Segarkan</span>
+                </button>
+              </div>
+            )}
 
             <div className="p-4 sm:p-6">
               {/* TAB 1: KELOLA ORDERS */}
@@ -428,25 +1316,45 @@ export default function AdminDashboardPage() {
                     </div>
                   </div>
 
+                  {/* Summary Bar: Completed filter + atau date range aktif */}
+                  {(statusFilter === "completed" || dateRangeFilter) && (
+                    <div className="bg-emerald-50 border border-emerald-200/80 text-emerald-900 text-xs px-4 py-2.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1 shadow-sm">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp size={16} className="text-emerald-600 shrink-0" />
+                        <span>
+                          {statusFilter === "completed" && dateRangeLabel
+                            ? <>Filter: <strong>COMPLETED</strong> • <strong>{dateRangeLabel}</strong></>
+                            : statusFilter === "completed"
+                            ? <>Menampilkan pesanan dengan status <strong>COMPLETED</strong></>
+                            : <>Filter aktif: <strong>{dateRangeLabel}</strong> — {filteredOrders.length} order ditampilkan</>}
+                        </span>
+                      </div>
+                      <div className="font-extrabold text-emerald-700 text-xs sm:text-sm">
+                        Penghasilan Selesai: {formatRupiah(filteredCompletedEarnings)} ({allCompletedOrders.length} order)
+                      </div>
+                    </div>
+                  )}
+
                   {/* Orders Table */}
                   <div className="overflow-x-auto border border-slate-200 rounded-xl">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                         <tr>
-                          <th className="p-3">ID Order</th>
-                          <th className="p-3">Pelanggan</th>
-                          <th className="p-3">Layanan</th>
-                          <th className="p-3">Rute</th>
-                          <th className="p-3">Ongkos</th>
-                          <th className="p-3">Driver</th>
-                          <th className="p-3">Status</th>
-                          <th className="p-3 text-right">Aksi</th>
+                          <th className="p-3 whitespace-nowrap">ID Order</th>
+                          <th className="p-3 whitespace-nowrap">Tanggal</th>
+                          <th className="p-3 whitespace-nowrap">Pelanggan</th>
+                          <th className="p-3 whitespace-nowrap">Layanan</th>
+                          <th className="p-3 whitespace-nowrap">Rute</th>
+                          <th className="p-3 whitespace-nowrap">Ongkos</th>
+                          <th className="p-3 whitespace-nowrap">Driver</th>
+                          <th className="p-3 whitespace-nowrap">Status</th>
+                          <th className="p-3 text-right whitespace-nowrap">Aksi</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {filteredOrders.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="p-8 text-center text-slate-400">
+                            <td colSpan={9} className="p-8 text-center text-slate-400">
                               Tidak ada pesanan ditemukan.
                             </td>
                           </tr>
@@ -454,6 +1362,14 @@ export default function AdminDashboardPage() {
                           filteredOrders.map((ord) => (
                             <tr key={ord.id} className="hover:bg-slate-50/70 transition-colors">
                               <td className="p-3 font-mono font-bold text-slate-900">{ord.id}</td>
+                              <td className="p-3 whitespace-nowrap">
+                                <div className="font-semibold text-slate-800">
+                                  {formatOrderDateTime(ord.created_at).date}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {formatOrderDateTime(ord.created_at).time}
+                                </div>
+                              </td>
                               <td className="p-3">
                                 <div className="font-semibold text-slate-900">{ord.customer_name}</div>
                                 <div className="text-[10px] text-slate-400">{ord.customer_phone}</div>
@@ -596,45 +1512,275 @@ export default function AdminDashboardPage() {
 
               {/* TAB 3: LAYANAN & TARIF ZONA */}
               {activeTab === "fares" && (
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-3">{services.length} Layanan Aktif:</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {services.map((s) => (
-                        <div key={s.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex justify-between items-center text-xs">
-                          <div>
-                            <div className="font-bold text-slate-900">{s.name}</div>
-                            <span className="text-slate-400">{s.slug}</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="font-bold text-blue-600">
-                              {s.extra_fee === 0 ? "Tanpa Biaya Ekstra" : `+${formatRupiah(s.extra_fee)}`}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
+                <div className="space-y-8">
+                  {/* Action Header Bar */}
+                  <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="badge badge-blue text-[11px] font-bold">
+                          Pengaturan Tarif Fleksibel
+                        </span>
+                        {hasUnsavedFares && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full animate-pulse">
+                            ● Perubahan belum disimpan
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-base sm:text-lg font-extrabold text-slate-900">
+                        Atur Tarif Zona & Biaya Layanan
+                      </h3>
+                      <p className="text-xs text-slate-500 max-w-xl">
+                        Ubah harga secara manual. Nilai yang disimpan otomatis menjadi <strong>harga terbaru resmi</strong> dan langsung berlaku pada kalkulator publik, rincian halaman tarif, serta pemesanan order.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleResetFares}
+                        disabled={isSavingFares || !hasUnsavedFares}
+                        className="btn btn-secondary text-xs flex items-center gap-1.5 disabled:opacity-50"
+                        title="Kembalikan ke tarif tersimpan di database"
+                      >
+                        <RotateCcw size={13} />
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveAllFares}
+                        disabled={isSavingFares}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                      >
+                        <Save size={14} className={isSavingFares ? "animate-spin" : ""} />
+                        <span>{isSavingFares ? "Menyimpan..." : "Simpan Semua Perubahan"}</span>
+                      </button>
                     </div>
                   </div>
 
+                  {/* Section 1: Zona Tarif */}
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 mb-3">{fareZones.length} Zona Tarif:</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      {fareZones.map((z) => (
-                        <div key={z.id} className="p-4 rounded-xl border border-slate-200 bg-white text-xs">
-                          <div className="font-bold text-slate-900 mb-1">{z.name}</div>
-                          <div className="text-slate-500 mb-2">
-                            {z.max_km ? `${z.min_km} - ${z.max_km} km` : `> ${z.min_km} km`}
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <span className="w-2.5 h-5 bg-blue-600 rounded-full inline-block" />
+                          Tabel Zona Tarif Layanan ({fareZones.length} Zona)
+                        </h4>
+                        <span className="text-xs text-slate-500">
+                          Tarif dasar flat per jangkauan jarak kilometer.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {fareZones.map((zone) => {
+                        const edit = editedZones[zone.id] || {
+                          base_price: zone.base_price,
+                          per_km_price: zone.per_km_price,
+                        };
+                        const isSavingThis = savingItemKey === `zone-${zone.id}`;
+                        const isModified =
+                          edit.base_price !== zone.base_price ||
+                          edit.per_km_price !== zone.per_km_price;
+
+                        return (
+                          <div
+                            key={zone.id}
+                            className={`bg-white rounded-2xl p-5 border shadow-sm relative overflow-hidden flex flex-col justify-between transition-all ${
+                              isModified ? "border-blue-400 ring-2 ring-blue-500/10" : "border-slate-200"
+                            }`}
+                          >
+                            <div
+                              className="absolute top-0 left-0 right-0 h-1.5"
+                              style={{ backgroundColor: zone.color || "#3b82f6" }}
+                            />
+
+                            <div>
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                                  {zone.name}
+                                </span>
+                                <span
+                                  className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                                  style={{
+                                    backgroundColor: `${zone.color || "#3b82f6"}18`,
+                                    color: zone.color || "#3b82f6",
+                                  }}
+                                >
+                                  {zone.max_km ? `${zone.min_km} – ${zone.max_km} km` : `> ${zone.min_km} km`}
+                                </span>
+                              </div>
+
+                              {/* Input Tarif Dasar / Flat */}
+                              <div className="mb-3">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                  Tarif Flat / Dasar (Rp)
+                                </label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="500"
+                                    value={edit.base_price}
+                                    onChange={(e) =>
+                                      handleZonePriceChange(zone.id, "base_price", e.target.value)
+                                    }
+                                    className="w-full text-base font-extrabold text-slate-900 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                  />
+                                </div>
+                                <div className="flex items-center justify-between text-[11px] mt-1 font-semibold">
+                                  <span className="text-slate-400">Pratinjau:</span>
+                                  <span className="text-blue-600 font-extrabold">
+                                    {formatRupiah(edit.base_price)}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Input Tarif Tambahan per-km (untuk zona > 10 km atau yang ada per_km_price) */}
+                              {(zone.per_km_price > 0 || zone.max_km === null) && (
+                                <div className="mb-3 pt-2 border-t border-slate-100">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                    Tarif Tambahan / Km (Rp)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="500"
+                                    value={edit.per_km_price}
+                                    onChange={(e) =>
+                                      handleZonePriceChange(zone.id, "per_km_price", e.target.value)
+                                    }
+                                    className="w-full text-xs font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                                  />
+                                  <div className="flex items-center justify-between text-[10px] mt-1">
+                                    <span className="text-slate-400">Ekstra per km:</span>
+                                    <span className="text-emerald-600 font-bold">
+                                      +{formatRupiah(edit.per_km_price)}/km
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                              <span className="text-[10px] text-slate-400">
+                                {isModified ? "Belum disimpan" : "Tersimpan aktif"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSingleZone(zone)}
+                                disabled={isSavingThis || !isModified}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all ${
+                                  isModified
+                                    ? "bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+                                    : "bg-slate-100 text-slate-400 cursor-default"
+                                }`}
+                              >
+                                <Save size={12} className={isSavingThis ? "animate-spin" : ""} />
+                                <span>{isSavingThis ? "Menyimpan..." : "Simpan"}</span>
+                              </button>
+                            </div>
                           </div>
-                          <div className="font-extrabold text-base text-blue-600">
-                            {formatRupiah(z.base_price)}
-                          </div>
-                          {z.per_km_price > 0 && (
-                            <span className="text-[10px] text-slate-400 block mt-1">
-                              +{formatRupiah(z.per_km_price)}/km
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section 2: Biaya Tambahan Per Jenis Layanan */}
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                          <span className="w-2.5 h-5 bg-blue-600 rounded-full inline-block" />
+                          Biaya Tambahan Per Jenis Layanan ({services.length} Layanan)
+                        </h4>
+                        <span className="text-xs text-slate-500">
+                          Biaya ekstra khusus tiap layanan (misal: jasa titip, motor kilat). Masukkan <strong>0</strong> untuk layanan gratis tanpa biaya ekstra.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+                      <div className="divide-y divide-slate-100">
+                        {services.map((svc) => {
+                          const edit = editedServices[svc.id] || { extra_fee: svc.extra_fee };
+                          const isSavingThis = savingItemKey === `svc-${svc.id}`;
+                          const isModified = edit.extra_fee !== svc.extra_fee;
+
+                          return (
+                            <div
+                              key={svc.id}
+                              className={`p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                                isModified ? "bg-blue-50/40" : "hover:bg-slate-50/70"
+                              }`}
+                            >
+                              <div className="flex items-start sm:items-center gap-3.5">
+                                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 font-bold mt-0.5 sm:mt-0">
+                                  {svc.slug === "antar-jemput-motor" && <Bike size={20} />}
+                                  {svc.slug === "jastip-kuliner" && <UtensilsCrossed size={20} />}
+                                  {svc.slug === "jastip-belanja" && <ShoppingBasket size={20} />}
+                                  {svc.slug === "kirim-dokumen" && <Package size={20} />}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h5 className="font-bold text-slate-900 text-sm">{svc.name}</h5>
+                                    {svc.badge_text && (
+                                      <span className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+                                        {svc.badge_text}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500 max-w-lg mt-0.5">
+                                    {svc.description}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
+                                <div className="text-left sm:text-right">
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                    Biaya Layanan (Rp)
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="500"
+                                      value={edit.extra_fee}
+                                      onChange={(e) =>
+                                        handleServiceFeeChange(svc.id, e.target.value)
+                                      }
+                                      className="w-28 text-xs font-bold text-slate-900 bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-right"
+                                    />
+                                    <span className="text-xs font-bold whitespace-nowrap min-w-[70px] text-right">
+                                      {edit.extra_fee === 0 ? (
+                                        <span className="text-emerald-600 font-extrabold">Gratis (+Rp0)</span>
+                                      ) : (
+                                        <span className="text-blue-600 font-extrabold">
+                                          +{formatRupiah(edit.extra_fee)}
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveSingleService(svc)}
+                                  disabled={isSavingThis || !isModified}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all mt-3 sm:mt-0 ${
+                                    isModified
+                                      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+                                      : "bg-slate-100 text-slate-400 cursor-default"
+                                  }`}
+                                >
+                                  <Save size={12} className={isSavingThis ? "animate-spin" : ""} />
+                                  <span>{isSavingThis ? "..." : "Simpan"}</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -659,6 +1805,179 @@ export default function AdminDashboardPage() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* TAB 5: KELOLA ULASAN */}
+              {activeTab === "reviews" && (
+                <div className="space-y-4">
+                  {/* Summary & Filters Bar */}
+                  <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-11 h-11 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-500">
+                          <Star size={24} fill="#f59e0b" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xl font-extrabold text-slate-900">{reviewAvgScore}</span>
+                            <span className="text-xs text-slate-400 font-bold">/ 5.0</span>
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            Total {reviews.length} ulasan masuk
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Search & Rating Filter */}
+                    <div className="flex flex-col sm:flex-row gap-2.5 items-stretch sm:items-center">
+                      <div className="relative w-full sm:w-64">
+                        <Search
+                          size={15}
+                          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                        />
+                        <input
+                          type="text"
+                          value={reviewSearch}
+                          onChange={(e) => setReviewSearch(e.target.value)}
+                          placeholder="Cari pelanggan, driver, order..."
+                          className="w-full pl-9 pr-3 py-1.5 bg-white rounded-xl text-xs border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setReviewRatingFilter("all")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                            reviewRatingFilter === "all"
+                              ? "bg-slate-900 text-white shadow-2xs"
+                              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          Semua ({reviews.length})
+                        </button>
+                        {[5, 4, 3, 2, 1].map((starVal) => {
+                          const count = reviews.filter((r) => r.rating === starVal).length;
+                          return (
+                            <button
+                              key={starVal}
+                              type="button"
+                              onClick={() => setReviewRatingFilter(starVal)}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-0.5 transition-all cursor-pointer ${
+                                reviewRatingFilter === starVal
+                                  ? "bg-amber-500 text-white shadow-2xs"
+                                  : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                              }`}
+                            >
+                              <span>{starVal}</span>
+                              <Star
+                                size={10}
+                                fill={reviewRatingFilter === starVal ? "#ffffff" : "#f59e0b"}
+                                className={reviewRatingFilter === starVal ? "text-white" : "text-amber-500"}
+                              />
+                              <span className="text-[10px] opacity-75">({count})</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Review List */}
+                  {filteredReviews.length === 0 ? (
+                    <div className="py-16 text-center text-slate-500 bg-slate-50/50 rounded-2xl border border-slate-200/80">
+                      <MessageSquare size={36} className="mx-auto text-slate-300 mb-2.5" />
+                      <p className="text-sm font-bold text-slate-700 mb-1">
+                        {reviews.length === 0 ? "Belum ada ulasan dari pelanggan" : "Tidak ada ulasan yang sesuai dengan filter"}
+                      </p>
+                      <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                        {reviews.length === 0
+                          ? "Ulasan yang diberikan oleh pelanggan setelah menyelesaikan order akan otomatis muncul di sini."
+                          : "Coba ubah kata kunci pencarian atau pilih filter bintang lainnya."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredReviews.map((rev) => (
+                        <div
+                          key={rev.id}
+                          className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-2xs hover:border-blue-200 transition-all flex flex-col justify-between gap-3.5"
+                        >
+                          {/* Top Row: Stars + Date + Service */}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-0.5">
+                                {[1, 2, 3, 4, 5].map((s) => (
+                                  <Star
+                                    key={s}
+                                    size={14}
+                                    fill={s <= rev.rating ? "#f59e0b" : "none"}
+                                    className={s <= rev.rating ? "text-amber-400" : "text-slate-200"}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-xs font-extrabold text-slate-800">
+                                {rev.rating}.0
+                              </span>
+                              <span className="text-xs text-slate-300">•</span>
+                              <span className="badge badge-blue text-[10px] font-bold">
+                                {rev.service_name}
+                              </span>
+                            </div>
+
+                            <span className="text-[11px] text-slate-400 font-medium">
+                              {rev.created_at ? formatDate(rev.created_at) : "-"}
+                            </span>
+                          </div>
+
+                          {/* Comment Content */}
+                          <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-100 text-xs sm:text-sm text-slate-800 leading-relaxed font-normal">
+                            &ldquo;{rev.comment || "Tanpa komentar tertulis."}&rdquo;
+                          </div>
+
+                          {/* Bottom Row: Metadata & Delete Button */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 border-t border-slate-100">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                              <div>
+                                <span className="text-slate-400">Pelanggan: </span>
+                                <strong className="text-slate-700">{rev.customer_name}</strong>
+                                {rev.customer_phone && rev.customer_phone !== "-" && (
+                                  <span className="text-slate-400 ml-1">({rev.customer_phone})</span>
+                                )}
+                              </div>
+                              <div>
+                                <span className="text-slate-400">Driver: </span>
+                                <strong className="text-slate-700">{rev.driver_name}</strong>
+                                {rev.driver_plate && rev.driver_plate !== "-" && (
+                                  <span className="text-slate-400 ml-1">[{rev.driver_plate}]</span>
+                                )}
+                              </div>
+                              <div>
+                                <span className="text-slate-400">ID Order: </span>
+                                <span className="font-mono font-semibold text-slate-600">{rev.order_id}</span>
+                                {rev.route_summary && (
+                                  <span className="text-slate-400 ml-1">({rev.route_summary})</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Tombol Hapus Ulasan */}
+                            <button
+                              type="button"
+                              onClick={() => setReviewToDelete(rev)}
+                              className="px-3 py-1.5 bg-red-50 hover:bg-red-100 active:bg-red-200 border border-red-200 text-red-600 hover:text-red-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 self-end sm:self-auto"
+                              title="Hapus ulasan ini"
+                            >
+                              <Trash2 size={13} />
+                              <span>Hapus Ulasan</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -699,6 +2018,53 @@ export default function AdminDashboardPage() {
                     className="btn btn-secondary text-xs"
                   >
                     Batal
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Konfirmasi Hapus Ulasan */}
+          {reviewToDelete && (
+            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mb-4 mx-auto sm:mx-0">
+                  <Trash2 size={24} />
+                </div>
+                <h3 className="text-base font-extrabold text-slate-900 mb-1">
+                  Hapus Ulasan Pelanggan?
+                </h3>
+                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                  Tindakan ini akan menghapus ulasan dari database secara permanen dan tidak dapat dibatalkan.
+                </p>
+
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 mb-5 text-xs text-slate-700 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900">{reviewToDelete.customer_name}</span>
+                    <span className="text-amber-500 font-extrabold">⭐ {reviewToDelete.rating}.0</span>
+                  </div>
+                  <p className="text-slate-600 italic line-clamp-2">
+                    &ldquo;{reviewToDelete.comment}&rdquo;
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setReviewToDelete(null)}
+                    disabled={isDeletingReview}
+                    className="btn btn-secondary text-xs px-4 py-2"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDeleteReview}
+                    disabled={isDeletingReview}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Trash2 size={13} className={isDeletingReview ? "animate-spin" : ""} />
+                    <span>{isDeletingReview ? "Menghapus..." : "Ya, Hapus Ulasan"}</span>
                   </button>
                 </div>
               </div>

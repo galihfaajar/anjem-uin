@@ -127,26 +127,6 @@ export default async function UlasanPage() {
               ))
             )}
           </div>
-
-          {/* CTA Banner */}
-          <div className="mt-14 max-w-3xl mx-auto bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-8 text-center text-white shadow-lg">
-            <h3 className="text-xl sm:text-2xl font-bold mb-2">
-              Ingin Rasakan Layanan Cepat & Praktis Ini?
-            </h3>
-            <p className="text-blue-100 text-sm max-w-xl mx-auto mb-6">
-              Pesan sekarang melalui WhatsApp atau gunakan formulir pemesanan web kami.
-              Estimasi ongkir langsung transparan tanpa biaya tersembunyi.
-            </p>
-            <div className="flex flex-wrap gap-3 justify-center">
-              <Link href="/pesan" className="btn btn-secondary text-sm">
-                Pesan via Web Sekarang
-                <ArrowRight size={16} />
-              </Link>
-              <Link href="/" className="btn bg-white/20 hover:bg-white/30 text-white text-sm border-0">
-                Kembali ke Beranda
-              </Link>
-            </div>
-          </div>
         </div>
       </main>
 
