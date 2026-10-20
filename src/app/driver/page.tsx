@@ -551,25 +551,25 @@ export default function DriverDashboardPage() {
                             )}
                           </div>
 
-                          <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <div className="text-xs font-bold text-slate-800">
+                          <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-800 break-words">
                                 {ord.customer_name} ({ord.customer_phone})
                               </div>
-                              <span className="text-xs text-slate-500">
+                              <span className="text-xs text-slate-500 block">
                                 Total Ongkos:{" "}
                                 <strong className="text-blue-600">{formatRupiah(ord.fare)}</strong>{" "}
                                 ({ord.payment_method === "cash" ? "Tunai" : "QRIS"})
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
                               {ord.customer_phone && (
                                 <a
                                   href={waCustHref}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center gap-1.5"
+                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
                                 >
                                   <MessageCircle size={14} />
                                   Chat WA
@@ -580,7 +580,7 @@ export default function DriverDashboardPage() {
                                 <button
                                   onClick={() => handleUpdateStatus(ord.id, "on_the_way")}
                                   disabled={updatingOrderId === ord.id}
-                                  className="btn btn-primary text-xs py-2 px-3 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  className="btn btn-primary text-xs py-2 px-3 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial whitespace-nowrap text-center"
                                 >
                                   {updatingOrderId === ord.id ? (
                                     <>
@@ -594,7 +594,7 @@ export default function DriverDashboardPage() {
                                 <button
                                   onClick={() => handleUpdateStatus(ord.id, "completed")}
                                   disabled={updatingOrderId === ord.id}
-                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 flex-1 sm:flex-initial whitespace-nowrap text-center"
                                 >
                                   {updatingOrderId === ord.id ? (
                                     <>

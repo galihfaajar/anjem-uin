@@ -944,7 +944,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={fetchLiveData}
                 disabled={isLoadingData}
@@ -964,13 +964,6 @@ export default function AdminDashboardPage() {
                 {dateRangeFilter && (
                   <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-blue-500 border border-white" />
                 )}
-              </button>
-              <button
-                onClick={handleLogout}
-                className="btn btn-secondary text-xs text-red-600 hover:bg-red-50 flex items-center gap-1.5"
-              >
-                <LogOut size={14} />
-                Keluar
               </button>
             </div>
           </div>
