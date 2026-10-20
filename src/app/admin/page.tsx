@@ -659,10 +659,10 @@ export default function AdminDashboardPage() {
     return allTimeCompletedOrders.reduce((sum, o) => sum + (Number(o.fare) || 0), 0);
   }, [allTimeCompletedOrders]);
 
-  // Khusus hari ini (untuk komparasi)
+  // Khusus hari ini (diselaraskan persis dengan filter 'Hari Ini' berstatus completed)
   const dailyCompletedOrders = useMemo(() => {
     return allTimeCompletedOrders.filter((o) => {
-      const orderDateKey = getLocalDateKey(o.completed_at || o.created_at);
+      const orderDateKey = getLocalDateKey(o.created_at);
       return orderDateKey === todayKey;
     });
   }, [allTimeCompletedOrders, todayKey]);
