@@ -26,8 +26,8 @@ const footerLinks = {
       external: true,
     },
     { label: "Pusat Bantuan", href: "/bantuan" },
-    { label: "Daftar Jadi Driver", href: "/daftar" },
     { label: "Syarat & Ketentuan", href: "/syarat" },
+    { label: "Kebijakan Privasi", href: "/privasi" },
   ],
 };
 

@@ -42,7 +42,7 @@ export interface Driver {
   rating_avg: number;
   total_trips: number;
   last_seen: string | null;
-  profile?: Pick<Profile, "full_name" | "avatar_url">;
+  profile?: Pick<Profile, "full_name" | "avatar_url" | "phone">;
 }
 
 export interface Service {

@@ -34,9 +34,15 @@ import {
   Package,
   Trash2,
   MessageSquare,
+  UserPlus,
+  Eye,
+  EyeOff,
+  Phone,
+  Mail,
+  Lock,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
-import { formatDate } from "@/lib/utils";
+import { formatDate, buildWALink } from "@/lib/utils";
 import type { Order, Driver, DriverStatus, OrderStatus, Service, FareZone } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
@@ -122,6 +128,36 @@ export default function AdminDashboardPage() {
   const [reviewToDelete, setReviewToDelete] = useState<AdminReview | null>(null);
   const [isDeletingReview, setIsDeletingReview] = useState(false);
 
+  // State Pendaftaran & Kelola Mitra Driver oleh Admin
+  const [driverSearch, setDriverSearch] = useState("");
+  const [driverStatusFilter, setDriverStatusFilter] = useState<string>("all");
+  const [addDriverModalOpen, setAddDriverModalOpen] = useState(false);
+  const [newDriverName, setNewDriverName] = useState("");
+  const [newDriverPhone, setNewDriverPhone] = useState("");
+  const [newDriverEmail, setNewDriverEmail] = useState("");
+  const [newDriverPassword, setNewDriverPassword] = useState("");
+  const [newDriverVehicle, setNewDriverVehicle] = useState("");
+  const [newDriverPlate, setNewDriverPlate] = useState("");
+  const [newDriverStatus, setNewDriverStatus] = useState<"approved" | "pending">("approved");
+  const [showDriverPassword, setShowDriverPassword] = useState(false);
+  const [isSubmittingDriver, setIsSubmittingDriver] = useState(false);
+  const [addDriverError, setAddDriverError] = useState("");
+
+  const filteredDrivers = useMemo(() => {
+    return drivers.filter((d) => {
+      const q = driverSearch.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        (d.profile?.full_name?.toLowerCase().includes(q)) ||
+        (d.plate_number?.toLowerCase().includes(q)) ||
+        (d.vehicle_type?.toLowerCase().includes(q)) ||
+        (d.profile?.phone?.toLowerCase().includes(q));
+      const matchStatus =
+        driverStatusFilter === "all" || d.status === driverStatusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [drivers, driverSearch, driverStatusFilter]);
+
   const fetchReviews = useCallback(async () => {
     setIsLoadingReviews(true);
     try {
@@ -170,6 +206,7 @@ export default function AdminDashboardPage() {
             ...d,
             profile: {
               full_name: d.profile?.full_name || "Driver",
+              phone: d.profile?.phone || null,
               avatar_url: d.profile?.avatar_url || null,
             },
           }));
@@ -806,6 +843,68 @@ export default function AdminDashboardPage() {
     }
   };
 
+  // Buka modal pendaftaran mitra driver baru
+  const handleOpenAddDriver = () => {
+    setNewDriverName("");
+    setNewDriverPhone("");
+    setNewDriverEmail("");
+    setNewDriverPassword("");
+    setNewDriverVehicle("");
+    setNewDriverPlate("");
+    setNewDriverStatus("approved");
+    setAddDriverError("");
+    setShowDriverPassword(false);
+    setAddDriverModalOpen(true);
+  };
+
+  // Submit pendaftaran mitra driver baru oleh admin
+  const handleCreateDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittingDriver(true);
+    setAddDriverError("");
+
+    try {
+      const res = await fetch("/api/admin/drivers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: newDriverName,
+          email: newDriverEmail,
+          phone: newDriverPhone,
+          password: newDriverPassword,
+          vehicleType: newDriverVehicle,
+          plateNumber: newDriverPlate,
+          status: newDriverStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setAddDriverError(data.error || "Gagal mendaftarkan mitra driver baru.");
+        setIsSubmittingDriver(false);
+        return;
+      }
+
+      showToast(`Mitra driver "${newDriverName}" berhasil didaftarkan!`);
+      setAddDriverModalOpen(false);
+      setAuditLogs((prev) => [
+        {
+          id: `log-${Date.now()}`,
+          action: "CREATE_DRIVER",
+          target: `Mendaftarkan driver baru ${newDriverName} (${newDriverPlate})`,
+          time: new Date().toLocaleTimeString("id-ID") + " WIB",
+          admin: "Admin Pusat",
+        },
+        ...prev,
+      ]);
+      await fetchLiveData();
+    } catch {
+      setAddDriverError("Terjadi kesalahan jaringan saat mendaftarkan driver.");
+    } finally {
+      setIsSubmittingDriver(false);
+    }
+  };
+
   // Assign driver to order
   const handleAssignDriver = async (driverId: string) => {
     if (!selectedOrder) return;
@@ -1206,15 +1305,31 @@ export default function AdminDashboardPage() {
             )}
 
             {activeTab === "drivers" && (
-              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-3.5 flex items-center justify-between">
+              <div className="border-b border-slate-100 bg-slate-50/60 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2.5 h-6 bg-purple-600 rounded-full inline-block" />
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                      🛵 Kelola & Pendaftaran Mitra Driver
+                      <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
+                        Total {drivers.length}
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Pendaftaran mitra driver hanya dapat dilakukan oleh admin dari panel ini.
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex items-center gap-2">
-                  <span className="w-2 h-4.5 bg-purple-600 rounded-full inline-block" />
-                  <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                    🛵 Verifikasi & Kelola Driver
-                    <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
-                      {drivers.length}
-                    </span>
-                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleOpenAddDriver}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-sm shadow-purple-500/20 cursor-pointer"
+                  >
+                    <UserPlus size={15} />
+                    <span>+ Tambah Mitra Driver</span>
+                  </button>
                 </div>
               </div>
             )}
@@ -1416,77 +1531,161 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              {/* TAB 2: VERIFIKASI DRIVER */}
+              {/* TAB 2: KELOLA & PENDAFTARAN MITRA DRIVER */}
               {activeTab === "drivers" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {drivers.map((drv) => (
-                      <div
-                        key={drv.id}
-                        className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between"
+                  {/* Filter & Search Bar */}
+                  <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-3.5 sm:p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="relative flex-1 max-w-md">
+                      <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={driverSearch}
+                        onChange={(e) => setDriverSearch(e.target.value)}
+                        placeholder="Cari nama driver, plat motor, tipe kendaraan, atau nomor HP..."
+                        className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-semibold text-slate-500 mr-1 flex items-center gap-1">
+                        <Filter size={12} /> Status:
+                      </span>
+                      {[
+                        { key: "all", label: "Semua" },
+                        { key: "approved", label: "Aktif" },
+                        { key: "pending", label: "Pending" },
+                        { key: "blocked", label: "Diblokir" },
+                      ].map((s) => (
+                        <button
+                          key={s.key}
+                          type="button"
+                          onClick={() => setDriverStatusFilter(s.key)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                            driverStatusFilter === s.key
+                              ? "bg-purple-600 text-white shadow-2xs"
+                              : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {filteredDrivers.length === 0 ? (
+                    <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-slate-200">
+                      <Bike size={36} className="mx-auto text-slate-300 mb-2" />
+                      <h4 className="text-sm font-bold text-slate-700">Tidak ada driver yang cocok</h4>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+                        {driverSearch || driverStatusFilter !== "all"
+                          ? "Coba sesuaikan kata kunci pencarian atau filter status driver."
+                          : "Belum ada mitra driver terdaftar. Klik tombol '+ Tambah Mitra Driver' di atas untuk mendaftarkan driver baru."}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleOpenAddDriver}
+                        className="mt-4 px-3.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-sm shadow-purple-500/20"
                       >
-                        <div>
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-800 font-bold flex items-center justify-center">
-                                {drv.profile?.full_name?.slice(0, 2) || "DR"}
+                        <UserPlus size={14} />
+                        Daftarkan Driver Pertama
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filteredDrivers.map((drv) => (
+                        <div
+                          key={drv.id}
+                          className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between hover:border-purple-200 transition-all"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow-sm flex-shrink-0">
+                                  {drv.profile?.full_name?.slice(0, 2).toUpperCase() || "DR"}
+                                </div>
+                                <div>
+                                  <h3 className="font-bold text-slate-900 text-sm leading-tight">
+                                    {drv.profile?.full_name}
+                                  </h3>
+                                  <span className="text-[11px] text-slate-500 block">
+                                    {drv.vehicle_type} • Plat: <strong className="text-slate-800">{drv.plate_number}</strong>
+                                  </span>
+                                  {drv.profile?.phone && (
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <span className="text-[11px] text-slate-500 font-mono">
+                                        📞 {drv.profile.phone}
+                                      </span>
+                                      <a
+                                        href={buildWALink(drv.profile.phone, `Halo ${drv.profile.full_name}, kami dari Admin Anjem UIN.`)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md hover:bg-emerald-100 transition-colors inline-flex items-center gap-1"
+                                      >
+                                        Chat WA
+                                      </a>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div>
-                                <h3 className="font-bold text-slate-900 text-sm">
-                                  {drv.profile?.full_name}
-                                </h3>
-                                <span className="text-[11px] text-slate-500">
-                                  {drv.vehicle_type} • Plat: <strong>{drv.plate_number}</strong>
+                              <span
+                                className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+                                  drv.status === "approved"
+                                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                    : drv.status === "pending"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : "bg-red-50 text-red-700 border border-red-200"
+                                }`}
+                              >
+                                {drv.status === "approved" ? "AKTIF" : drv.status === "pending" ? "PENDING" : "DIBLOKIR"}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 space-y-1 mb-4">
+                              <div className="flex items-center justify-between">
+                                <span>Rating Layanan:</span>
+                                <strong>⭐ {drv.rating_avg.toFixed(1)} / 5.0 ({drv.total_trips} trip)</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span>Status Siaga:</span>
+                                <span className={drv.is_online ? "text-emerald-600 font-bold flex items-center gap-1" : "text-slate-400"}>
+                                  <span className={`w-2 h-2 rounded-full ${drv.is_online ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+                                  {drv.is_online ? "Online (Siaga Order)" : "Offline"}
                                 </span>
                               </div>
                             </div>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                drv.status === "approved"
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : drv.status === "pending"
-                                  ? "bg-amber-50 text-amber-700"
-                                  : "bg-red-50 text-red-700"
-                              }`}
-                            >
-                              {drv.status.toUpperCase()}
-                            </span>
                           </div>
 
-                          <div className="text-xs text-slate-500 space-y-1 mb-4">
-                            <div>
-                              Rating: <strong>{drv.rating_avg.toFixed(1)} / 5.0</strong> ({drv.total_trips} trip)
-                            </div>
-                            <div>
-                              Status Online:{" "}
-                              <span className={drv.is_online ? "text-emerald-600 font-bold" : "text-slate-400"}>
-                                {drv.is_online ? "Online Standby" : "Offline"}
-                              </span>
-                            </div>
+                          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                            {drv.status !== "approved" && (
+                              <button
+                                onClick={() => handleDriverStatus(drv.id, "approved")}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                Setujui / Aktifkan Driver
+                              </button>
+                            )}
+                            {drv.status === "approved" && (
+                              <button
+                                onClick={() => handleDriverStatus(drv.id, "blocked")}
+                                className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                Blokir Driver
+                              </button>
+                            )}
+                            {drv.status === "blocked" && (
+                              <button
+                                onClick={() => handleDriverStatus(drv.id, "approved")}
+                                className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                Buka Blokir
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                          {drv.status !== "approved" && (
-                            <button
-                              onClick={() => handleDriverStatus(drv.id, "approved")}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold"
-                            >
-                              Setujui Driver
-                            </button>
-                          )}
-                          {drv.status !== "blocked" && (
-                            <button
-                              onClick={() => handleDriverStatus(drv.id, "blocked")}
-                              className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold"
-                            >
-                              Blokir
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -2047,6 +2246,223 @@ export default function AdminDashboardPage() {
                     <span>{isDeletingReview ? "Menghapus..." : "Ya, Hapus Ulasan"}</span>
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Pendaftaran Mitra Driver Baru oleh Admin */}
+          {addDriverModalOpen && (
+            <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 my-8 animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-start justify-between pb-4 border-b border-slate-100 mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold shadow-sm">
+                      <UserPlus size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        Daftarkan Mitra Driver Baru
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        Hanya admin berwenang mendaftarkan akun mitra driver Anjem UIN
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddDriverModalOpen(false)}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                  >
+                    <XCircle size={20} />
+                  </button>
+                </div>
+
+                {addDriverError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+                    <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+                    <div>{addDriverError}</div>
+                  </div>
+                )}
+
+                <form onSubmit={handleCreateDriver} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Nama Lengkap Driver <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newDriverName}
+                        onChange={(e) => setNewDriverName(e.target.value)}
+                        placeholder="Contoh: Muhammad Rizki"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Nomor WhatsApp / HP <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="tel"
+                          required
+                          value={newDriverPhone}
+                          onChange={(e) => setNewDriverPhone(e.target.value)}
+                          placeholder="081234567890"
+                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Email Akun Driver <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="email"
+                          required
+                          value={newDriverEmail}
+                          onChange={(e) => setNewDriverEmail(e.target.value)}
+                          placeholder="driver@anjem.uin"
+                          className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Kata Sandi Akun Driver (Min 6 Karakter) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Lock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type={showDriverPassword ? "text" : "password"}
+                          required
+                          minLength={6}
+                          value={newDriverPassword}
+                          onChange={(e) => setNewDriverPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowDriverPassword(!showDriverPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                        >
+                          {showDriverPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Merk & Tipe Motor <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newDriverVehicle}
+                        onChange={(e) => setNewDriverVehicle(e.target.value)}
+                        placeholder="Contoh: Honda Vario 125"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Nomor Plat Polisi <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newDriverPlate}
+                        onChange={(e) => setNewDriverPlate(e.target.value)}
+                        placeholder="Contoh: AD 1234 XY"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 uppercase focus:outline-none focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Status Awal Akun Driver
+                      </label>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <button
+                          type="button"
+                          onClick={() => setNewDriverStatus("approved")}
+                          className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-left flex items-center gap-2 cursor-pointer ${
+                            newDriverStatus === "approved"
+                              ? "bg-emerald-50 border-emerald-400 text-emerald-800 shadow-2xs"
+                              : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[10px] ${
+                            newDriverStatus === "approved" ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300"
+                          }`}>
+                            {newDriverStatus === "approved" && "✓"}
+                          </span>
+                          <div>
+                            <div>Langsung Aktif</div>
+                            <div className="text-[10px] font-normal text-emerald-600">Bisa langsung narik order</div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setNewDriverStatus("pending")}
+                          className={`p-2.5 rounded-xl text-xs font-bold border transition-all text-left flex items-center gap-2 cursor-pointer ${
+                            newDriverStatus === "pending"
+                              ? "bg-amber-50 border-amber-400 text-amber-800 shadow-2xs"
+                              : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center text-[10px] ${
+                            newDriverStatus === "pending" ? "border-amber-600 bg-amber-600 text-white" : "border-slate-300"
+                          }`}>
+                            {newDriverStatus === "pending" && "✓"}
+                          </span>
+                          <div>
+                            <div>Pending (Verifikasi)</div>
+                            <div className="text-[10px] font-normal text-amber-600">Disetujui nanti</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5 mt-5">
+                    <button
+                      type="button"
+                      onClick={() => setAddDriverModalOpen(false)}
+                      disabled={isSubmittingDriver}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSubmittingDriver}
+                      className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 active:bg-purple-800 disabled:opacity-60 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm shadow-purple-500/20 transition-all cursor-pointer"
+                    >
+                      {isSubmittingDriver ? (
+                        <>
+                          <RefreshCw size={14} className="animate-spin" />
+                          <span>Mendaftarkan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus size={14} />
+                          <span>Daftarkan Mitra Driver</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}

@@ -48,12 +48,11 @@ export default async function DriversSection() {
           <div className="card max-w-sm mx-auto mt-8 text-center">
             <Bike size={36} className="mx-auto text-slate-300 mb-3" />
             <p className="text-slate-500 text-sm">
-              Belum ada driver terverifikasi yang ditampilkan. Daftar sebagai
-              driver pertama!
+              Mitra driver terverifikasi siap melayani kebutuhan antar-jemput dan jastip Anda di Solo Raya.
             </p>
             <div className="mt-4">
-              <Link href="/daftar" className="btn btn-primary btn-sm inline-flex items-center gap-1.5">
-                Daftar Jadi Driver <ArrowRight size={14} />
+              <Link href="/pesan" className="btn btn-primary btn-sm inline-flex items-center gap-1.5">
+                Pesan Layanan Sekarang <ArrowRight size={14} />
               </Link>
             </div>
           </div>
@@ -138,10 +137,10 @@ export default async function DriversSection() {
 
         <div className="text-center mt-10">
           <Link
-            href="/daftar"
-            className="btn btn-outline inline-flex items-center gap-2"
+            href="/pesan"
+            className="btn btn-primary inline-flex items-center gap-2"
           >
-            Tertarik Menjadi Mitra? Daftar Driver Sekarang
+            Pesan Antar-Jemput Sekarang
             <ArrowRight size={15} />
           </Link>
         </div>

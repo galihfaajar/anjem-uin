@@ -15,24 +15,24 @@ import {
   CheckCircle2,
   AlertCircle,
   FileText,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 function DaftarForm() {
-
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/dashboard";
-  const [accountType, setAccountType] = useState<"customer" | "driver">("customer");
-
 
   // Form states
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
-  const [vehicleType, setVehicleType] = useState("");
-  const [plateNumber, setPlateNumber] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -40,14 +40,25 @@ function DaftarForm() {
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setErrorMsg("");
     setSuccessMsg("");
+
+    if (password.length < 6) {
+      setErrorMsg("Kata sandi minimal 6 karakter.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setErrorMsg("Konfirmasi kata sandi tidak cocok. Harap periksa kembali.");
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const supabase = createClient();
 
-      // Daftar ke Supabase auth
+      // Daftar ke Supabase auth sebagai pelanggan
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -55,9 +66,7 @@ function DaftarForm() {
           data: {
             full_name: fullName,
             phone: phone,
-            role: accountType,
-            vehicle_type: vehicleType || undefined,
-            plate_number: plateNumber || undefined,
+            role: "customer",
           },
         },
       });
@@ -68,36 +77,15 @@ function DaftarForm() {
         return;
       }
 
-      // Jika driver, buat record drivers juga (trigger mungkin belum selesai)
-      if (accountType === "driver" && data.user) {
-        // Tunggu sebentar agar trigger profile selesai
-        await new Promise((r) => setTimeout(r, 1500));
-        
-        // Coba insert driver record (jika trigger belum membuatnya)
-        try {
-          await supabase.from("drivers").insert({
-            profile_id: data.user.id,
-            plate_number: plateNumber || "-",
-            vehicle_type: vehicleType || "Motor",
-            status: "pending",
-          });
-        } catch { /* Ignore if already exists */ }
-      }
-
       if (data.session) {
         // Langsung login — redirect ke halaman yang diminta
         setSuccessMsg("Pendaftaran berhasil! Mengalihkan...");
         setTimeout(() => {
-          router.push(accountType === "driver" ? "/driver" : redirectTo);
+          router.push(redirectTo);
         }, 1000);
-
       } else {
         // Email verification required
-        setSuccessMsg(
-          accountType === "driver"
-            ? "Pendaftaran berhasil! Cek email untuk verifikasi akun. Setelah itu, tunggu persetujuan admin."
-            : "Pendaftaran berhasil! Cek email untuk verifikasi akun, lalu masuk ke dashboard."
-        );
+        setSuccessMsg("Pendaftaran berhasil! Cek email untuk verifikasi akun, lalu masuk ke dashboard.");
       }
     } catch (err) {
       setErrorMsg("Gagal melakukan pendaftaran. Coba lagi.");
@@ -118,7 +106,7 @@ function DaftarForm() {
           </span>
         </Link>
         <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-          Buat Akun Baru
+          Buat Akun Pelanggan
         </h2>
         <p className="mt-1 text-xs sm:text-sm text-slate-500">
           Sudah punya akun?{" "}
@@ -126,49 +114,19 @@ function DaftarForm() {
             Masuk di sini
           </Link>
         </p>
-
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 shadow-sm border border-slate-200/90 rounded-2xl sm:px-10">
-          {/* Account Type Toggle */}
-          <div className="flex rounded-xl bg-slate-100 p-1 mb-6">
-            <button
-              type="button"
-              onClick={() => setAccountType("customer")}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                accountType === "customer"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              👤 Pelanggan / Mahasiswa
-            </button>
-            <button
-              type="button"
-              onClick={() => setAccountType("driver")}
-              className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
-                accountType === "driver"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              🛵 Daftar Jadi Driver
-            </button>
-          </div>
-
-          {accountType === "driver" && (
-            <div className="mb-5 p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
-              <div className="font-bold mb-1 flex items-center gap-1.5">
-                <ShieldCheck size={15} />
-                Pemberitahuan Pendaftaran Driver:
-              </div>
-              <p className="text-[11px] leading-relaxed">
-                Akun driver akan berstatus <code>pending</code> hingga diverifikasi oleh tim admin
-                Anjem UIN. Driver tidak dapat menerima order sebelum disetujui.
-              </p>
+          <div className="mb-6 pb-4 border-b border-slate-100 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+              <User size={18} />
             </div>
-          )}
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Registrasi Akun Mahasiswa</h3>
+              <p className="text-[11px] text-slate-500">Daftar untuk mulai memesan antar-jemput dan jastip</p>
+            </div>
+          </div>
 
           {errorMsg && (
             <div className="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
@@ -236,38 +194,6 @@ function DaftarForm() {
               </div>
             </div>
 
-            {accountType === "driver" && (
-              <>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Jenis Motor & Tahun
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={vehicleType}
-                    onChange={(e) => setVehicleType(e.target.value)}
-                    placeholder="Contoh: Honda Vario 125 (2022)"
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Nomor Plat Kendaraan
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={plateNumber}
-                    onChange={(e) => setPlateNumber(e.target.value)}
-                    placeholder="Contoh: AD 1234 XY"
-                    className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 uppercase"
-                  />
-                </div>
-              </>
-            )}
-
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Kata Sandi (Minimal 6 Karakter)
@@ -275,27 +201,57 @@ function DaftarForm() {
               <div className="relative">
                 <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   minLength={6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Konfirmasi Kata Sandi
+              </label>
+              <div className="relative">
+                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  required
+                  minLength={6}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full pl-10 pr-10 py-2.5 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                  aria-label={showConfirmPassword ? "Sembunyikan konfirmasi kata sandi" : "Lihat konfirmasi kata sandi"}
+                >
+                  {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full mt-4 btn btn-primary py-2.5 text-sm flex items-center justify-center gap-2"
+              className="w-full mt-4 btn btn-primary py-2.5 text-sm flex items-center justify-center gap-2 cursor-pointer"
             >
-              {loading
-                ? "Mendaftarkan..."
-                : accountType === "driver"
-                ? "Kirim Permohonan Mitra Driver"
-                : "Daftar Akun Pelanggan"}
+              {loading ? "Mendaftarkan..." : "Daftar Akun Pelanggan"}
               <ArrowRight size={16} />
             </button>
           </form>
