@@ -263,12 +263,6 @@ export default function OrderTrackingPage({
                 <span className="font-mono text-sm font-extrabold text-slate-900 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
                   {order.id}
                 </span>
-                {isLiveMode && (
-                  <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full shadow-2xs">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    Realtime Terhubung
-                  </span>
-                )}
               </div>
               <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight mt-1">
                 Lacak Status Pesanan

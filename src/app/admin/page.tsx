@@ -934,15 +934,6 @@ export default function AdminDashboardPage() {
                   <span className="badge badge-blue text-[11px] font-bold">
                     Panel Pengelola Resmi
                   </span>
-                  {isLive && (
-                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-2xs">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                      </span>
-                      Realtime Otomatis
-                    </span>
-                  )}
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                   Dashboard Administrasi Anjem UIN
@@ -1200,10 +1191,6 @@ export default function AdminDashboardPage() {
                     📋 Semua Order
                     <span className="text-xs font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full ml-1">
                       {filteredOrders.length}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full ml-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Live Sync
                     </span>
                     {dateRangeLabel && (
                       <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">

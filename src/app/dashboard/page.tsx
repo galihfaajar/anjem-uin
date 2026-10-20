@@ -134,11 +134,6 @@ export default function CustomerDashboardPage() {
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="badge badge-blue text-[11px]">Akun Pelanggan Kampus</span>
-                  {isLive && (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                      ● Live
-                    </span>
-                  )}
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                   Halo, {userName}!

@@ -307,11 +307,6 @@ export default function DriverDashboardPage() {
                   <span className="badge badge-green text-[10px] py-0.5 px-2 font-bold">
                     {driverStatus === "approved" ? "Terverifikasi" : driverStatus === "pending" ? "Pending" : "Diblokir"}
                   </span>
-                  {isLive && (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                      ● Live
-                    </span>
-                  )}
                 </div>
                 <div className="text-xs text-slate-500 mt-0.5">
                   {driverVehicle} • Plat: <strong>{driverPlate}</strong>
