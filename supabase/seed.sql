@@ -15,16 +15,24 @@ ON CONFLICT (id) DO UPDATE SET
   description = EXCLUDED.description,
   extra_fee = EXCLUDED.extra_fee;
 
--- 2. ZONA TARIF (CONTOH AWAL — Wajib dikonfirmasi sebelum operasional)
+-- 2. ZONA TARIF RESMI (Berdasarkan Pricelist Resmi)
 INSERT INTO public.fare_zones (id, name, min_km, max_km, base_price, per_km_price, color, sort_order, is_active)
 VALUES
-  ('zone-1', 'Zona 1', 0, 3, 5000, 0, '#22c55e', 1, TRUE),
-  ('zone-2', 'Zona 2', 3, 6, 9500, 0, '#3b82f6', 2, TRUE),
-  ('zone-3', 'Zona 3', 6, 10, 14000, 0, '#f59e0b', 3, TRUE),
-  ('zone-4', 'Zona 4', 10, NULL, 14000, 2000, '#ef4444', 4, TRUE)
+  ('zone-1', 'Radius Sekitar UIN (±1,3 km)', 0.0, 1.3, 5000, 0, '#10b981', 1, TRUE),
+  ('zone-2', 'Radius 1,4 km', 1.3, 1.4, 6000, 0, '#06b6d4', 2, TRUE),
+  ('zone-3', 'Radius 2 km', 1.4, 2.0, 7000, 0, '#3b82f6', 3, TRUE),
+  ('zone-4', 'Radius 3 km', 2.0, 3.0, 8000, 0, '#8b5cf6', 4, TRUE),
+  ('zone-5', 'Lebih dari 3 km', 3.0, 5.0, 8000, 1000, '#f59e0b', 5, TRUE),
+  ('zone-6', 'Di atas 5 km', 5.0, NULL, 10000, 2000, '#ef4444', 6, TRUE)
 ON CONFLICT (id) DO UPDATE SET
+  name = EXCLUDED.name,
+  min_km = EXCLUDED.min_km,
+  max_km = EXCLUDED.max_km,
   base_price = EXCLUDED.base_price,
-  per_km_price = EXCLUDED.per_km_price;
+  per_km_price = EXCLUDED.per_km_price,
+  color = EXCLUDED.color,
+  sort_order = EXCLUDED.sort_order,
+  is_active = EXCLUDED.is_active;
 
 -- 3. RUTE POPULER (Jarak estimasi — belum diverifikasi lapangan)
 INSERT INTO public.popular_routes (id, origin_name, destination_name, distance_km, is_active, sort_order)

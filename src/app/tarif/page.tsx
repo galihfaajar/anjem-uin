@@ -70,14 +70,14 @@ export default async function TarifPage() {
             </div>
           </div>
 
-          {/* 4 Zona Tarif Grid */}
+          {/* Zona Tarif Grid */}
           <div className="max-w-4xl mx-auto mb-14">
             <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
               <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block" />
-              Tabel Zona Tarif Layanan
+              Tabel Zona Tarif Layanan Resmi
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {zones.map((zone) => (
                 <div
                   key={zone.id}
@@ -127,6 +127,94 @@ export default async function TarifPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Ketentuan Biaya Tambahan & Jastip Resmi */}
+          <div className="max-w-4xl mx-auto mb-14">
+            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <span className="w-2.5 h-6 bg-blue-600 rounded-full inline-block" />
+              Biaya Tambahan Operasional &amp; Ketentuan Jastip
+            </h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Box Kondisi Lapangan & Waktu */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <span className="w-2 h-2 rounded-full bg-blue-600" />
+                  Kondisi Khusus &amp; Jam Layanan
+                </h3>
+
+                <div className="space-y-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <strong className="text-slate-800 block">☔ Saat Cuaca Hujan:</strong>
+                      <span className="text-slate-500 text-[11px]">
+                        Dinyalakan oleh driver melalui toggle jika kondisi di lapangan sedang hujan
+                      </span>
+                    </div>
+                    <span className="font-extrabold text-blue-600 whitespace-nowrap">+Rp2.000</span>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <strong className="text-slate-800 block">🌙 Order di Atas Pukul 22.30 WIB:</strong>
+                      <span className="text-slate-500 text-[11px]">
+                        Otomatis terdeteksi dan ditambahkan oleh sistem untuk operasional larut malam
+                      </span>
+                    </div>
+                    <span className="font-extrabold text-indigo-600 whitespace-nowrap">+Rp1.000</span>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3 pt-2 border-t border-slate-100">
+                    <div>
+                      <strong className="text-slate-800 block">📍 Anjem Mampir ke Tempat Tambahan:</strong>
+                      <span className="text-slate-500 text-[11px]">
+                        Dikenakan per titik mampir tambahan sebelum sampai di titik akhir
+                      </span>
+                    </div>
+                    <span className="font-extrabold text-slate-800 whitespace-nowrap">+Rp1.000/tempat</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Box Ketentuan Jastip */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  🛍️ Aturan Layanan Jastip
+                </h3>
+
+                <ul className="space-y-2.5 text-xs text-slate-600">
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>1 Tempat Belanja:</strong> Bebas biaya tempat</span>
+                    <span className="font-bold text-emerald-600">Gratis</span>
+                  </li>
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>Pindah Tempat Belanja:</strong> Tambah titik toko/warung</span>
+                    <span className="font-bold text-slate-800">+Rp2.000/tempat</span>
+                  </li>
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>Titipan Lebih dari 3 Item:</strong> Dihitung per item ke-4 dst</span>
+                    <span className="font-bold text-slate-800">+Rp1.000/item</span>
+                  </li>
+                  <li className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed">
+                    <strong>Catatan Foodcourt / Pujasera:</strong> Jastip berbeda tempat namun masih dalam 1 area dihitung <strong>Rp1.000/item</strong> sesuai ketentuan lebih dari 3 item, <u>bukan</u> per tempat.
+                  </li>
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>Menunggu Belanja Lebih dari 1 Jam:</strong></span>
+                    <span className="font-bold text-slate-800">+Rp2.000</span>
+                  </li>
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>Tempat Jastip Tutup (sudah 2x percobaan):</strong> Ongkir tetap</span>
+                    <span className="font-bold text-slate-800">Rp2.000</span>
+                  </li>
+                  <li className="flex items-start justify-between gap-2">
+                    <span>• <strong>Jastip di Luar Area UIN:</strong> Estimasi 2 km</span>
+                    <span className="font-bold text-blue-600">Ongkir Rp5.000</span>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
 

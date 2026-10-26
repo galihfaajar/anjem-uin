@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { calculateFare } from "@/lib/pricing/calculateFare";
+import { calculateFare, isNightTime } from "@/lib/pricing/calculateFare";
 import { createClient } from "@/lib/supabase/server";
 
 const fareSchema = z.object({
   serviceId: z.string().min(1, "Layanan wajib dipilih"),
   distanceKm: z.number().min(0, "Jarak tidak boleh negatif").max(50, "Jarak melebihi batas maksimal 50 km"),
+  isRain: z.boolean().optional(),
+  isNight: z.boolean().optional(),
+  extraStops: z.number().int().min(0).optional(),
+  jastipOptions: z
+    .object({
+      extraPlaces: z.number().int().min(0).optional(),
+      isSameArea: z.boolean().optional(),
+      totalItems: z.number().int().min(0).optional(),
+      isOutsideUin: z.boolean().optional(),
+      waitHoursOver1: z.boolean().optional(),
+      closedAttempts: z.number().int().min(0).optional(),
+    })
+    .optional(),
 });
 
 export async function POST(request: Request) {
@@ -20,7 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { serviceId, distanceKm } = parsed.data;
+    const { serviceId, distanceKm, isRain, isNight, extraStops, jastipOptions } = parsed.data;
     const supabase = await createClient();
 
     // Ambil layanan dari database
@@ -44,7 +57,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Konfigurasi tarif belum tersedia" }, { status: 500 });
     }
 
-    const fareResult = calculateFare(distanceKm, extraFee, fareZones);
+    // Default jam malam: jika tidak dikirim spesifik, deteksi otomatis realtime
+    const nightActive = typeof isNight === "boolean" ? isNight : isNightTime();
+
+    const fareResult = calculateFare(
+      distanceKm,
+      {
+        serviceExtraFee: extraFee,
+        isRain: Boolean(isRain),
+        isNight: nightActive,
+        extraStops: extraStops || 0,
+        jastipOptions,
+      },
+      fareZones
+    );
 
     return NextResponse.json({
       success: true,

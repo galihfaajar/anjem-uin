@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { calculateFare } from "@/lib/pricing/calculateFare";
+import { calculateFare, isNightTime } from "@/lib/pricing/calculateFare";
 import { createClient } from "@/lib/supabase/server";
 import { normalizePhoneNumber } from "@/lib/phone";
 import type { Order, OrderEvent } from "@/types";
@@ -22,6 +22,11 @@ const createOrderSchema = z.object({
   distanceKm: z.number().min(0.1, "Jarak minimal 0.1 km").max(30, "Jarak melebihi batas 30 km"),
   itemNotes: z.string().optional().nullable(),
   itemsEstimate: z.number().optional().nullable(),
+  extraStops: z.number().int().min(0).default(0),
+  jastipExtraPlaces: z.number().int().min(0).default(0),
+  jastipSameArea: z.boolean().default(false),
+  jastipItemsCount: z.number().int().min(0).default(0),
+  jastipOutsideUin: z.boolean().default(false),
   paymentMethod: z.enum(["cash", "qris_driver"], {
     message: "Pilih metode pembayaran yang valid",
   }),
@@ -76,11 +81,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Konfigurasi tarif belum tersedia" }, { status: 500 });
     }
 
-    // HITUNG ULANG TARIF DI SERVER — jangan pernah percaya angka dari client
-    const fareResult = calculateFare(data.distanceKm, service.extra_fee, fareZones);
+    // Deteksi otomatis jam malam: Order di atas pukul 22.30 WIB (+Rp1.000)
+    const isNight = isNightTime();
+    const isRain = false; // Default awal adalah tidak hujan, driver yang menyalakan jika hujan di lapangan
+
+    // HITUNG ULANG TARIF DI SERVER — jangan pernah percaya angka mentah dari client
+    const fareResult = calculateFare(
+      data.distanceKm,
+      {
+        serviceExtraFee: service.extra_fee,
+        isRain,
+        isNight,
+        extraStops: data.extraStops,
+        jastipOptions: {
+          extraPlaces: data.jastipExtraPlaces,
+          isSameArea: data.jastipSameArea,
+          totalItems: data.jastipItemsCount,
+          isOutsideUin: data.jastipOutsideUin,
+        },
+      },
+      fareZones
+    );
 
     const orderId = `ORD-UIN-${Math.floor(1000 + Math.random() * 9000)}`;
     const now = new Date().toISOString();
+
+    const extraFeeDetails = {
+      extra_stops: data.extraStops,
+      jastip_extra_places: data.jastipExtraPlaces,
+      jastip_same_area: data.jastipSameArea,
+      jastip_items_count: data.jastipItemsCount,
+      jastip_outside_uin: data.jastipOutsideUin,
+    };
 
     const fareSnapshot = {
       service_name: service.name,
@@ -88,6 +120,21 @@ export async function POST(request: Request) {
       base_price: fareResult.base_price,
       extra_fee: fareResult.extra_fee,
       per_km_extra: fareResult.per_km_extra,
+      is_rain: false,
+      rain_fee: 0,
+      is_night: isNight,
+      night_fee: isNight ? 1000 : 0,
+      extra_stops: data.extraStops,
+      extra_stops_fee: fareResult.extra_stops_fee,
+      jastip_details: {
+        places_count: (data.jastipExtraPlaces || 0) + 1,
+        extra_places_fee: data.jastipSameArea ? 0 : (data.jastipExtraPlaces || 0) * 2000,
+        items_count: data.jastipItemsCount,
+        extra_items_fee: (data.jastipItemsCount || 0) > 3 ? ((data.jastipItemsCount || 0) - 3) * 1000 : 0,
+        is_same_area: data.jastipSameArea,
+        is_outside_uin: data.jastipOutsideUin,
+      },
+      breakdown: fareResult.breakdown,
       total: fareResult.total,
       distance_km: data.distanceKm,
       calculated_at: now,
@@ -109,6 +156,11 @@ export async function POST(request: Request) {
       distance_km: data.distanceKm,
       fare: fareResult.total,
       fare_snapshot: fareSnapshot,
+      is_rain: false,
+      rain_fee: 0,
+      is_night: isNight,
+      night_fee: isNight ? 1000 : 0,
+      extra_fee_details: extraFeeDetails,
       item_notes: data.itemNotes ?? null,
       items_estimate: data.itemsEstimate ?? null,
       payment_method: data.paymentMethod,

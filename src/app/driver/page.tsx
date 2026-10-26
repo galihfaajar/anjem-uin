@@ -26,6 +26,7 @@ import {
   Eye,
   FileDown,
   FileText,
+  CloudRain,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import { buildWALink } from "@/lib/utils";
@@ -243,6 +244,32 @@ export default function DriverDashboardPage() {
       showToast("Gagal terhubung ke server.");
     } finally {
       setTakingOrderId(null); // Always unlock
+    }
+  };
+
+  const handleToggleRain = async (orderId: string, currentState: boolean) => {
+    try {
+      const res = await fetch(`/api/driver/orders/${orderId}/rain`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_rain: !currentState }),
+      });
+      const data = await res.json();
+      if (res.ok && data.order) {
+        setMyOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
+        if (selectedOrderForDetail?.id === orderId) {
+          setSelectedOrderForDetail(data.order);
+        }
+        showToast(
+          !currentState
+            ? "Opsi kondisi hujan AKTIF (+Rp2.000)"
+            : "Opsi kondisi hujan NONAKTIF"
+        );
+      } else {
+        showToast(data.error || "Gagal mengubah opsi kondisi hujan.");
+      }
+    } catch {
+      showToast("Gagal terhubung ke server.");
     }
   };
 
@@ -593,6 +620,26 @@ export default function DriverDashboardPage() {
                                 <strong className="text-blue-600">{formatRupiah(ord.fare)}</strong>{" "}
                                 ({ord.payment_method === "cash" ? "Tunai" : "QRIS"})
                               </span>
+                              <div className="mt-1.5 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleRain(ord.id, Boolean(ord.is_rain))}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                                    ord.is_rain
+                                      ? "bg-blue-600 text-white shadow-xs"
+                                      : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                                  }`}
+                                  title="Toggle opsi kondisi cuaca hujan (+Rp2.000)"
+                                >
+                                  <CloudRain size={12} className={ord.is_rain ? "text-white" : "text-blue-600"} />
+                                  <span>{ord.is_rain ? "Hujan (+Rp2.000)" : "Toggle Hujan"}</span>
+                                </button>
+                                {ord.is_night && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                    🌙 Order Malam
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
@@ -760,6 +807,10 @@ export default function DriverDashboardPage() {
           hasActiveOrder={hasActiveOrder}
           isTaking={takingOrderId === selectedOrderForDetail?.id}
           isUpdating={updatingOrderId === selectedOrderForDetail?.id}
+          onOrderUpdated={(updated) => {
+            setMyOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+            setSelectedOrderForDetail(updated);
+          }}
           onTakeOrder={(id) => {
             setSelectedOrderForDetail(null);
             handleTakeOrder(id);

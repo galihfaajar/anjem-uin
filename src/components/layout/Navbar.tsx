@@ -430,7 +430,7 @@ export default function Navbar() {
                           onClick={() => setOpenDropdown(null)}
                           className="block w-full text-left px-4 py-2.5 text-sm font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                         >
-                          Tabel 4 Zona Tarif
+                          Tabel Zona Tarif & Pricelist
                         </Link>
                         <button
                           type="button"

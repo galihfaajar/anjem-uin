@@ -100,6 +100,11 @@ CREATE TABLE IF NOT EXISTS public.orders (
   distance_km NUMERIC NOT NULL,
   fare INTEGER NOT NULL,
   fare_snapshot JSONB NOT NULL DEFAULT '{}',
+  is_rain BOOLEAN NOT NULL DEFAULT FALSE,
+  rain_fee INTEGER NOT NULL DEFAULT 0,
+  is_night BOOLEAN NOT NULL DEFAULT FALSE,
+  night_fee INTEGER NOT NULL DEFAULT 0,
+  extra_fee_details JSONB NOT NULL DEFAULT '{}',
   item_notes TEXT,
   items_estimate INTEGER,
   payment_method TEXT NOT NULL CHECK (payment_method IN ('qris_driver', 'cash')) DEFAULT 'cash',
@@ -368,13 +373,20 @@ ON CONFLICT (id) DO UPDATE
 
 INSERT INTO public.fare_zones (id, name, min_km, max_km, base_price, per_km_price, color, sort_order)
 VALUES
-  ('zone-1', 'Zona 1 (0–3 km)', 0, 3, 5000, 0, '#22c55e', 1),
-  ('zone-2', 'Zona 2 (3–5 km)', 3, 5, 8000, 0, '#3b82f6', 2),
-  ('zone-3', 'Zona 3 (5–10 km)', 5, 10, 12000, 0, '#f59e0b', 3),
-  ('zone-4', 'Zona 4 (>10 km)', 10, null, 12000, 2000, '#ef4444', 4)
+  ('zone-1', 'Radius Sekitar UIN (±1,3 km)', 0.0, 1.3, 5000, 0, '#10b981', 1),
+  ('zone-2', 'Radius 1,4 km', 1.3, 1.4, 6000, 0, '#06b6d4', 2),
+  ('zone-3', 'Radius 2 km', 1.4, 2.0, 7000, 0, '#3b82f6', 3),
+  ('zone-4', 'Radius 3 km', 2.0, 3.0, 8000, 0, '#8b5cf6', 4),
+  ('zone-5', 'Lebih dari 3 km', 3.0, 5.0, 8000, 1000, '#f59e0b', 5),
+  ('zone-6', 'Di atas 5 km', 5.0, null, 10000, 2000, '#ef4444', 6)
 ON CONFLICT (id) DO UPDATE
-  SET base_price = EXCLUDED.base_price,
-      per_km_price = EXCLUDED.per_km_price;
+  SET name = EXCLUDED.name,
+      min_km = EXCLUDED.min_km,
+      max_km = EXCLUDED.max_km,
+      base_price = EXCLUDED.base_price,
+      per_km_price = EXCLUDED.per_km_price,
+      color = EXCLUDED.color,
+      sort_order = EXCLUDED.sort_order;
 
 INSERT INTO public.popular_routes (id, origin_name, destination_name, distance_km, sort_order)
 VALUES

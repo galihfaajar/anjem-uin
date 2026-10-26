@@ -252,24 +252,94 @@ export function generateInvoicePdf(order: Order, driverInfo?: DriverInfo) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
-  doc.text("RINCIAN PEMBAYARAN", margin, y + 4);
+  doc.text("RINCIAN PEMBAYARAN & INVOICE", margin, y + 4);
 
   y += 7;
+
+  // Build items breakdown list
+  const snapshot = order.fare_snapshot;
+  const breakdownRows: { label: string; amount: string }[] = [];
+
+  if (snapshot?.breakdown && Array.isArray(snapshot.breakdown) && snapshot.breakdown.length > 0) {
+    snapshot.breakdown.forEach((item) => {
+      breakdownRows.push({
+        label: item.label,
+        amount: formatRupiah(item.amount),
+      });
+    });
+  } else {
+    if (snapshot?.base_price) {
+      breakdownRows.push({
+        label: `Tarif Dasar (${snapshot.zone_name || "Zona Standar"})`,
+        amount: formatRupiah(snapshot.base_price),
+      });
+    } else {
+      breakdownRows.push({
+        label: "Tarif / Ongkos Layanan",
+        amount: formatRupiah(order.fare),
+      });
+    }
+
+    if (snapshot?.per_km_extra && snapshot.per_km_extra > 0) {
+      breakdownRows.push({
+        label: "Biaya Tambahan Jarak",
+        amount: formatRupiah(snapshot.per_km_extra),
+      });
+    }
+
+    if (order.is_rain || snapshot?.is_rain) {
+      breakdownRows.push({
+        label: "Opsi Cuaca Hujan",
+        amount: formatRupiah(order.rain_fee || snapshot?.rain_fee || 2000),
+      });
+    }
+
+    if (order.is_night || snapshot?.is_night) {
+      breakdownRows.push({
+        label: "Biaya Pesanan Larut Malam (> 22.30 WIB)",
+        amount: formatRupiah(order.night_fee || snapshot?.night_fee || 1000),
+      });
+    }
+
+    if (snapshot?.extra_fee && snapshot.extra_fee > 0) {
+      breakdownRows.push({
+        label: "Biaya Layanan",
+        amount: formatRupiah(snapshot.extra_fee),
+      });
+    }
+  }
+
+  // Pastikan opsi hujan selalu muncul jika driver menyalakan toggle hujan
+  const hasRainRow = breakdownRows.some((r) => r.label.toLowerCase().includes("hujan"));
+  if ((order.is_rain || snapshot?.is_rain) && !hasRainRow) {
+    breakdownRows.push({
+      label: "Opsi Cuaca Hujan (Kondisi Lapangan)",
+      amount: formatRupiah(order.rain_fee || snapshot?.rain_fee || 2000),
+    });
+  }
+
+  const payBoxHeight = 22 + breakdownRows.length * 5.5;
 
   // Box Payment
   doc.setFillColor(bgLight[0], bgLight[1], bgLight[2]);
   doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
-  doc.roundedRect(margin, y, contentWidth, 34, 2, 2, "FD");
+  doc.roundedRect(margin, y, contentWidth, payBoxHeight, 2, 2, "FD");
 
-  let payY = y + 7;
+  let payY = y + 6;
+  doc.setFontSize(8);
+
+  breakdownRows.forEach((row) => {
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
+    doc.text(row.label, margin + 5, payY);
+
+    doc.setTextColor(textDark[0], textDark[1], textDark[2]);
+    doc.text(row.amount, pageWidth - margin - 5, payY, { align: "right" });
+    payY += 5;
+  });
+
+  // Metode Pembayaran
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8.5);
-  doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
-  doc.text("Tarif / Ongkos Layanan", margin + 5, payY);
-  doc.setTextColor(textDark[0], textDark[1], textDark[2]);
-  doc.text(formatRupiah(order.fare), pageWidth - margin - 5, payY, { align: "right" });
-
-  payY += 6;
   doc.setTextColor(textMuted[0], textMuted[1], textMuted[2]);
   doc.text("Metode Pembayaran", margin + 5, payY);
   doc.setFont("helvetica", "bold");
@@ -281,21 +351,21 @@ export function generateInvoicePdf(order: Order, driverInfo?: DriverInfo) {
     { align: "right" }
   );
 
-  payY += 5;
+  payY += 4.5;
   doc.setDrawColor(borderColor[0], borderColor[1], borderColor[2]);
   doc.line(margin + 5, payY, pageWidth - margin - 5, payY);
 
-  payY += 6;
+  payY += 5.5;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(10.5);
   doc.setTextColor(primaryNavy[0], primaryNavy[1], primaryNavy[2]);
   doc.text("TOTAL DIBAYAR", margin + 5, payY);
 
-  doc.setFontSize(13);
+  doc.setFontSize(12.5);
   doc.setTextColor(5, 150, 105); // emerald-600
   doc.text(formatRupiah(order.fare), pageWidth - margin - 5, payY, { align: "right" });
 
-  y += 42;
+  y += payBoxHeight + 8;
 
   // ==================== 6. VERIFIKASI RESMI & CAP DIGITAL ====================
   // Verified Box

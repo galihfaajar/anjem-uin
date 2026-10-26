@@ -1,8 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Calculator, MessageCircle, ExternalLink, MapPin, Info } from "lucide-react";
-import { calculateFare, formatRupiah } from "@/lib/pricing/calculateFare";
+import { useState, useMemo, useEffect } from "react";
+import { Calculator, MessageCircle, ExternalLink, MapPin, Info, CloudRain, Moon } from "lucide-react";
+import {
+  calculateFare,
+  formatRupiah,
+  isNightTime,
+  DEFAULT_FARE_ZONES,
+} from "@/lib/pricing/calculateFare";
 import { buildWALink } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
 import type { PopularRoute, Service, FareZone } from "@/types";
@@ -10,16 +15,9 @@ import Link from "next/link";
 
 const DEFAULT_SERVICES: Service[] = [
   { id: "svc-1", slug: "antar-jemput-motor", name: "Antar Jemput Motor", description: "Ojek motor kampus", icon: "Bike", extra_fee: 0, is_active: true, badge_text: "Paling Populer", sort_order: 1 },
-  { id: "svc-2", slug: "jastip-kuliner", name: "Jastip Kuliner & Makanan", description: "Jastip makanan & minuman", icon: "UtensilsCrossed", extra_fee: 2000, is_active: true, badge_text: "Favorit Mahasiswa", sort_order: 2 },
-  { id: "svc-3", slug: "jastip-belanja", name: "Jastip Belanja Harian", description: "Belanja harian & minimarket", icon: "ShoppingBasket", extra_fee: 2000, is_active: true, badge_text: "Praktis & Hemat", sort_order: 3 },
+  { id: "svc-2", slug: "jastip-kuliner", name: "Jastip Kuliner & Makanan", description: "Jastip makanan & minuman", icon: "UtensilsCrossed", extra_fee: 0, is_active: true, badge_text: "Favorit Mahasiswa", sort_order: 2 },
+  { id: "svc-3", slug: "jastip-belanja", name: "Jastip Belanja Harian", description: "Belanja harian & minimarket", icon: "ShoppingBasket", extra_fee: 0, is_active: true, badge_text: "Praktis & Hemat", sort_order: 3 },
   { id: "svc-4", slug: "kirim-dokumen", name: "Kirim Dokumen & Paket Kilat", description: "Kirim berkas & barang", icon: "Package", extra_fee: 0, is_active: true, badge_text: "Instan Sampai", sort_order: 4 },
-];
-
-const DEFAULT_FARE_ZONES: FareZone[] = [
-  { id: "zone-1", name: "Zona 1", min_km: 0, max_km: 3, base_price: 5000, per_km_price: 0, color: "#22c55e", sort_order: 1, is_active: true },
-  { id: "zone-2", name: "Zona 2", min_km: 3, max_km: 6, base_price: 9500, per_km_price: 0, color: "#3b82f6", sort_order: 2, is_active: true },
-  { id: "zone-3", name: "Zona 3", min_km: 6, max_km: 10, base_price: 14000, per_km_price: 0, color: "#f59e0b", sort_order: 3, is_active: true },
-  { id: "zone-4", name: "Zona 4", min_km: 10, max_km: null, base_price: 14000, per_km_price: 2000, color: "#ef4444", sort_order: 4, is_active: true },
 ];
 
 interface FareCalculatorSectionProps {
@@ -46,8 +44,14 @@ export default function FareCalculatorSection({
   }, [activeServices]);
 
   const [selectedServiceId, setSelectedServiceId] = useState(serviceOptions[0]?.id || "svc-1");
-  const [distanceKm, setDistanceKm] = useState(2);
+  const [distanceKm, setDistanceKm] = useState(1.3);
   const [selectedRoute, setSelectedRoute] = useState<PopularRoute | null>(null);
+  const [isSimRain, setIsSimRain] = useState(false);
+  const [isSimNight, setIsSimNight] = useState(false);
+
+  useEffect(() => {
+    setIsSimNight(isNightTime());
+  }, []);
 
   const currentService = useMemo(() => {
     return serviceOptions.find((s) => s.id === selectedServiceId) || serviceOptions[0];
@@ -55,11 +59,19 @@ export default function FareCalculatorSection({
 
   const fareResult = useMemo(() => {
     try {
-      return calculateFare(distanceKm, currentService?.extraFee || 0, activeFareZones);
+      return calculateFare(
+        distanceKm,
+        {
+          serviceExtraFee: currentService?.extraFee || 0,
+          isRain: isSimRain,
+          isNight: isSimNight,
+        },
+        activeFareZones
+      );
     } catch {
       return null;
     }
-  }, [distanceKm, currentService, activeFareZones]);
+  }, [distanceKm, currentService, isSimRain, isSimNight, activeFareZones]);
 
   const waMessage = fareResult
     ? `Halo ${siteConfig.name}! Saya ingin memesan:
@@ -227,41 +239,64 @@ Mohon konfirmasi ketersediaan driver. Terima kasih!`
 
               {fareResult ? (
                 <>
-                  <div className="py-4 border-y border-slate-100 my-4 space-y-2">
-                    <div className="flex justify-between text-xs text-slate-500">
+                  {/* Kondisi Tambahan Simulators */}
+                  <div className="pt-3 border-t border-slate-100 flex flex-wrap gap-2 mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setIsSimRain((p) => !p)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isSimRain
+                          ? "bg-blue-600 text-white"
+                          : "bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+                      }`}
+                    >
+                      <CloudRain size={12} />
+                      <span>{isSimRain ? "Hujan (+Rp2.000)" : "Simulasi Hujan"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsSimNight((p) => !p)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isSimNight
+                          ? "bg-indigo-600 text-white"
+                          : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200"
+                      }`}
+                    >
+                      <Moon size={12} />
+                      <span>{isSimNight ? "Malam >22.30 (+Rp1.000)" : "Simulasi Jam Malam"}</span>
+                    </button>
+                  </div>
+
+                  <div className="py-3 border-y border-slate-100 my-3 space-y-1.5 text-xs text-slate-500">
+                    <div className="flex justify-between">
                       <span>Layanan</span>
                       <span className="font-semibold text-slate-700">{currentService?.label}</span>
                     </div>
                     {selectedRoute && (
-                      <div className="flex justify-between text-xs text-slate-500">
+                      <div className="flex justify-between">
                         <span>Rute</span>
                         <span className="font-semibold text-slate-700 text-right max-w-[180px] truncate">
                           {selectedRoute.destination_name}
                         </span>
                       </div>
                     )}
-                    <div className="flex justify-between text-xs text-slate-500">
+                    <div className="flex justify-between">
                       <span>Jarak</span>
                       <span className="font-semibold text-slate-700">{distanceKm} km</span>
                     </div>
-                    <div className="flex justify-between text-xs text-slate-500">
-                      <span>Zona</span>
-                      <span className="font-semibold text-slate-700">{fareResult.zone.name}</span>
-                    </div>
-                    <div className="flex justify-between text-xs text-slate-500">
-                      <span>Tarif Dasar</span>
-                      <span className="font-semibold text-slate-700">{formatRupiah(fareResult.base_price)}</span>
-                    </div>
-                    {fareResult.extra_fee > 0 && (
-                      <div className="flex justify-between text-xs text-slate-500">
-                        <span>Biaya Layanan</span>
-                        <span className="font-semibold text-amber-600">+{formatRupiah(fareResult.extra_fee)}</span>
-                      </div>
-                    )}
-                    {fareResult.per_km_extra > 0 && (
-                      <div className="flex justify-between text-xs text-slate-500">
-                        <span>Tambahan per-km</span>
-                        <span className="font-semibold text-slate-700">+{formatRupiah(fareResult.per_km_extra)}</span>
+
+                    {fareResult.breakdown && fareResult.breakdown.length > 0 ? (
+                      fareResult.breakdown.map((item, idx) => (
+                        <div key={idx} className="flex justify-between">
+                          <span>{item.label}</span>
+                          <span className="font-semibold text-slate-700">{formatRupiah(item.amount)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex justify-between">
+                        <span>Tarif Dasar</span>
+                        <span className="font-semibold text-slate-700">{formatRupiah(fareResult.base_price)}</span>
                       </div>
                     )}
                   </div>

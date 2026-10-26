@@ -398,6 +398,35 @@ export default function OrderTrackingPage({
                 </div>
               )}
 
+              {/* Special Badges: Hujan / Malam */}
+              {(order.is_rain || order.is_night) && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {order.is_rain && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                      ☔ Cuaca Hujan (+Rp2.000)
+                    </span>
+                  )}
+                  {order.is_night && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      🌙 Order Malam &gt;22.30 WIB (+Rp1.000)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Breakdown List jika ada */}
+              {order.fare_snapshot?.breakdown && order.fare_snapshot.breakdown.length > 0 && (
+                <div className="bg-slate-50 p-3 rounded-xl space-y-1 text-xs text-slate-600">
+                  <span className="font-bold text-slate-700 block mb-1">Rincian Perhitungan Ongkir:</span>
+                  {order.fare_snapshot.breakdown.map((item, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <span>{item.label}</span>
+                      <span className="font-medium text-slate-800">{formatRupiah(item.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
                 <span className="text-slate-500">
                   Jarak: <strong>{order.distance_km} km</strong> • Layanan:{" "}

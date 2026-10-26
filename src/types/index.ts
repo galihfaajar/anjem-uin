@@ -98,6 +98,11 @@ export interface Order {
   distance_km: number;
   fare: number;
   fare_snapshot: FareSnapshot;
+  is_rain?: boolean;
+  rain_fee?: number;
+  is_night?: boolean;
+  night_fee?: number;
+  extra_fee_details?: Record<string, any>;
   item_notes: string | null;
   items_estimate: number | null;
   payment_method: PaymentMethod;
@@ -118,12 +123,36 @@ export interface OrderEvent {
   created_at: string;
 }
 
+export interface FareBreakdownItem {
+  label: string;
+  amount: number;
+}
+
+export interface JastipDetails {
+  places_count?: number;
+  extra_places_fee?: number;
+  items_count?: number;
+  extra_items_fee?: number;
+  is_same_area?: boolean;
+  is_outside_uin?: boolean;
+  wait_hours_fee?: number;
+  closed_fee?: number;
+}
+
 export interface FareSnapshot {
   service_name: string;
   zone_name: string;
   base_price: number;
   extra_fee: number;
   per_km_extra: number;
+  rain_fee?: number;
+  is_rain?: boolean;
+  night_fee?: number;
+  is_night?: boolean;
+  extra_stops?: number;
+  extra_stops_fee?: number;
+  jastip_details?: JastipDetails;
+  breakdown?: FareBreakdownItem[];
   total: number;
   distance_km: number;
   calculated_at: string;
@@ -168,6 +197,11 @@ export interface FareResult {
   base_price: number;
   extra_fee: number;
   per_km_extra: number;
+  rain_fee?: number;
+  night_fee?: number;
+  extra_stops_fee?: number;
+  jastip_extra_fee?: number;
+  breakdown?: FareBreakdownItem[];
   total: number;
   distance_km: number;
 }

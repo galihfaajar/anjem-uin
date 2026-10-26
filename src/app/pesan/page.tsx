@@ -23,8 +23,16 @@ import {
   Loader2,
   User,
   Phone,
+  Moon,
+  Plus,
+  Minus,
 } from "lucide-react";
-import { calculateFare, formatRupiah } from "@/lib/pricing/calculateFare";
+import {
+  calculateFare,
+  formatRupiah,
+  isNightTime,
+  DEFAULT_FARE_ZONES,
+} from "@/lib/pricing/calculateFare";
 import { createClient } from "@/lib/supabase/client";
 import PhoneModal from "@/components/order/PhoneModal";
 import { validatePhoneNumber } from "@/lib/phone";
@@ -134,13 +142,7 @@ const SERVICE_POINT_LABELS: Record<
   },
 };
 
-const DEFAULT_FARE_ZONES: FareZone[] = [
-  { id: "zone-1", name: "Zona Kampus UIN (0 - 3 km)", min_km: 0, max_km: 3, base_price: 5000, per_km_price: 0, color: "#22c55e", sort_order: 1, is_active: true },
-  { id: "zone-2", name: "Zona Dekat (3.1 - 5 km)", min_km: 3.1, max_km: 5, base_price: 7000, per_km_price: 0, color: "#3b82f6", sort_order: 2, is_active: true },
-  { id: "zone-3", name: "Zona Sedang (5.1 - 7 km)", min_km: 5.1, max_km: 7, base_price: 10000, per_km_price: 0, color: "#f59e0b", sort_order: 3, is_active: true },
-  { id: "zone-4", name: "Zona Jauh (7.1 - 10 km)", min_km: 7.1, max_km: 10, base_price: 13000, per_km_price: 0, color: "#ef4444", sort_order: 4, is_active: true },
-  { id: "zone-5", name: "Zona Luar (> 10 km)", min_km: 10.1, max_km: null, base_price: 13000, per_km_price: 2000, color: "#64748b", sort_order: 5, is_active: true },
-];
+
 
 export default function PesanPage() {
   const router = useRouter();
@@ -161,10 +163,22 @@ export default function PesanPage() {
   const [selectedServiceId, setSelectedServiceId] = useState<string>("svc-1");
   const [pickupName, setPickupName] = useState<string>("");
   const [dropoffName, setDropoffName] = useState<string>("");
-  const [distanceKm, setDistanceKm] = useState<number>(3.0);
+  const [distanceKm, setDistanceKm] = useState<number>(1.3);
   const [itemNotes, setItemNotes] = useState<string>("");
   const [itemsEstimate, setItemsEstimate] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "qris_driver">("cash");
+
+  // Opsi Tambahan Anjem & Jastip Sesuai Pricelist Resmi
+  const [extraStops, setExtraStops] = useState<number>(0);
+  const [jastipExtraPlaces, setJastipExtraPlaces] = useState<number>(0);
+  const [jastipSameArea, setJastipSameArea] = useState<boolean>(false);
+  const [jastipItemsCount, setJastipItemsCount] = useState<number>(1);
+  const [jastipOutsideUin, setJastipOutsideUin] = useState<boolean>(false);
+  const [isNight, setIsNight] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsNight(isNightTime());
+  }, []);
 
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -315,8 +329,33 @@ export default function PesanPage() {
   );
 
   const fareResult = useMemo(
-    () => calculateFare(distanceKm, selectedService.extra_fee, fareZones),
-    [distanceKm, selectedService, fareZones]
+    () =>
+      calculateFare(
+        distanceKm,
+        {
+          serviceExtraFee: selectedService.extra_fee,
+          isNight,
+          extraStops: selectedService.slug === "antar-jemput-motor" ? extraStops : 0,
+          jastipOptions: {
+            extraPlaces: selectedService.slug.startsWith("jastip") ? jastipExtraPlaces : 0,
+            isSameArea: selectedService.slug.startsWith("jastip") ? jastipSameArea : false,
+            totalItems: selectedService.slug.startsWith("jastip") ? jastipItemsCount : 1,
+            isOutsideUin: selectedService.slug.startsWith("jastip") ? jastipOutsideUin : false,
+          },
+        },
+        fareZones
+      ),
+    [
+      distanceKm,
+      selectedService,
+      fareZones,
+      isNight,
+      extraStops,
+      jastipExtraPlaces,
+      jastipSameArea,
+      jastipItemsCount,
+      jastipOutsideUin,
+    ]
   );
 
   const handleSelectRoute = (route: PopularRoute) => {
@@ -430,6 +469,11 @@ export default function PesanPage() {
           dropoffLat: -7.5576,
           dropoffLng: 110.7706,
           distanceKm,
+          extraStops: selectedService.slug === "antar-jemput-motor" ? extraStops : 0,
+          jastipExtraPlaces: selectedService.slug.startsWith("jastip") ? jastipExtraPlaces : 0,
+          jastipSameArea: selectedService.slug.startsWith("jastip") ? jastipSameArea : false,
+          jastipItemsCount: selectedService.slug.startsWith("jastip") ? jastipItemsCount : 1,
+          jastipOutsideUin: selectedService.slug.startsWith("jastip") ? jastipOutsideUin : false,
           itemNotes: itemNotes.trim() ? itemNotes : null,
           itemsEstimate: itemsEstimate ? parseInt(itemsEstimate, 10) : null,
           paymentMethod,
@@ -736,6 +780,23 @@ export default function PesanPage() {
                 );
               })()}
 
+              {/* Notifikasi Jam Malam Otomatis */}
+              {isNight && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center gap-3 text-indigo-900">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                    <Moon size={20} />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">
+                      Tarif Malam Aktif (+Rp1.000)
+                    </span>
+                    <p className="text-xs text-indigo-800">
+                      Pemesanan saat ini berada di atas pukul 22.30 WIB. Sistem secara realtime menambahkan biaya Rp 1.000 sesuai regulasi operasional malam.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Jarak Slider */}
               <div id="section-distance" className="bg-white rounded-2xl p-5 border border-slate-200">
                 <div className="flex justify-between items-center mb-3">
@@ -750,18 +811,165 @@ export default function PesanPage() {
                   type="range"
                   min="0.5"
                   max="15"
-                  step="0.5"
+                  step="0.1"
                   value={distanceKm}
                   onChange={(e) => setDistanceKm(parseFloat(e.target.value))}
                   className="w-full accent-blue-600 h-2 bg-slate-100 rounded-lg cursor-pointer"
                 />
                 <div className="flex justify-between text-[11px] text-slate-400 mt-2">
-                  <span>0.5 km (Kampus)</span>
+                  <span>1.3 km (Sekitar UIN)</span>
+                  <span>3 km</span>
                   <span>5 km (Kartasura)</span>
-                  <span>10 km (Solo Kota)</span>
-                  <span>15 km (Luar Kota)</span>
+                  <span>15 km</span>
                 </div>
               </div>
+
+              {/* Opsi Tambahan Anjem Motor: Mampir Tempat Tambahan */}
+              {selectedService.slug === "antar-jemput-motor" && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Mampir ke Tempat Tambahan (+Rp1.000/tempat)
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Pilih jika driver diminta singgah/mampir di titik lain sebelum tujuan
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setExtraStops((p) => Math.max(0, p - 1))}
+                        disabled={extraStops === 0}
+                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 flex items-center justify-center font-bold text-slate-700 cursor-pointer"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-7 text-center font-extrabold text-slate-900 text-sm">
+                        {extraStops}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setExtraStops((p) => Math.min(5, p + 1))}
+                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center font-bold cursor-pointer"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Opsi Lengkap Jastip (Kuliner / Belanja) */}
+              {selectedService.slug.startsWith("jastip") && (
+                <div className="bg-white rounded-2xl p-5 border border-slate-200 space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    🛍️ Ketentuan &amp; Opsi Layanan Jastip
+                  </h3>
+
+                  {/* 1. Jumlah Tempat Belanja */}
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Tambah Tempat Belanja (+Rp2.000/tempat)
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        1 tempat gratis. Tambah tempat dikenakan biaya Rp2.000
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setJastipExtraPlaces((p) => Math.max(0, p - 1))}
+                        disabled={jastipExtraPlaces === 0}
+                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 flex items-center justify-center font-bold text-slate-700 cursor-pointer"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-7 text-center font-extrabold text-slate-900 text-sm">
+                        {jastipExtraPlaces}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setJastipExtraPlaces((p) => Math.min(5, p + 1))}
+                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center font-bold cursor-pointer"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 2. Checkbox Foodcourt / 1 Area */}
+                  {jastipExtraPlaces > 0 && (
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={jastipSameArea}
+                        onChange={(e) => setJastipSameArea(e.target.checked)}
+                        className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                      />
+                      <div>
+                        <strong className="text-slate-800 block font-semibold">
+                          Beda tempat tapi masih 1 area (contoh: Foodcourt / Kantin)
+                        </strong>
+                        <span className="text-slate-500 text-[11px]">
+                          Bebas biaya pindah tempat. Dihitung Rp1.000/item jika melebihi 3 item.
+                        </span>
+                      </div>
+                    </label>
+                  )}
+
+                  {/* 3. Jumlah Item Titipan */}
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div>
+                      <span className="text-xs font-bold text-slate-800 block">
+                        Perkiraan Jumlah Item Barang
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        1–3 item gratis. Lebih dari 3 item dikenakan +Rp1.000 per item
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setJastipItemsCount((p) => Math.max(1, p - 1))}
+                        disabled={jastipItemsCount <= 1}
+                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-40 flex items-center justify-center font-bold text-slate-700 cursor-pointer"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-7 text-center font-extrabold text-slate-900 text-sm">
+                        {jastipItemsCount}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setJastipItemsCount((p) => p + 1)}
+                        className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center justify-center font-bold cursor-pointer"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 4. Jastip Luar UIN */}
+                  <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200 cursor-pointer text-xs">
+                    <input
+                      type="checkbox"
+                      checked={jastipOutsideUin}
+                      onChange={(e) => setJastipOutsideUin(e.target.checked)}
+                      className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 h-4 w-4"
+                    />
+                    <div>
+                      <strong className="text-slate-800 block font-semibold">
+                        Jastip di luar area UIN (estimasi 2 km)
+                      </strong>
+                      <span className="text-slate-500 text-[11px]">
+                        Dikenakan tarif ongkir dasar Rp5.000
+                      </span>
+                    </div>
+                  </label>
+                </div>
+              )}
 
               {/* Ongkos Realtime Preview */}
               <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center justify-between">
@@ -1029,21 +1237,18 @@ export default function PesanPage() {
                 )}
 
                 {/* Fare Summary Breakdown */}
-                <div className="bg-slate-50 rounded-xl p-4 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Tarif Dasar ({fareResult.zone.name}):</span>
-                    <span>{formatRupiah(fareResult.base_price)}</span>
-                  </div>
-                  {fareResult.extra_fee > 0 && (
+                <div className="bg-slate-50 rounded-xl p-4 space-y-2 text-xs">
+                  {fareResult.breakdown && fareResult.breakdown.length > 0 ? (
+                    fareResult.breakdown.map((item, idx) => (
+                      <div key={idx} className="flex justify-between text-slate-600">
+                        <span>{item.label}:</span>
+                        <span className="font-medium text-slate-800">{formatRupiah(item.amount)}</span>
+                      </div>
+                    ))
+                  ) : (
                     <div className="flex justify-between text-slate-600">
-                      <span>Biaya Layanan Jastip:</span>
-                      <span>+{formatRupiah(fareResult.extra_fee)}</span>
-                    </div>
-                  )}
-                  {fareResult.per_km_extra > 0 && (
-                    <div className="flex justify-between text-slate-600">
-                      <span>Tambahan Jarak di atas 10 km:</span>
-                      <span>+{formatRupiah(fareResult.per_km_extra)}</span>
+                      <span>Tarif Dasar ({fareResult.zone.name}):</span>
+                      <span>{formatRupiah(fareResult.base_price)}</span>
                     </div>
                   )}
                   <div className="pt-2 border-t border-slate-200 flex justify-between font-extrabold text-slate-900 text-sm">
