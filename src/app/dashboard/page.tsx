@@ -8,21 +8,46 @@ import Footer from "@/components/layout/Footer";
 import WhatsAppFAB from "@/components/layout/WhatsAppFAB";
 import {
   Plus,
-  Clock,
-  CheckCircle2,
   MapPin,
   ArrowRight,
   LogOut,
-  Star,
-  User,
   ShoppingBag,
-  AlertCircle,
   RefreshCw,
-  Phone,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import type { Order } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+
+// Cache key untuk localStorage
+const CACHE_KEY = "anjem_dashboard";
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit
+
+interface DashboardCache {
+  userName: string;
+  userPhone: string;
+  userEmail: string;
+  orders: Order[];
+  cachedAt: number;
+}
+
+function readCache(): DashboardCache | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as DashboardCache;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(data: Omit<DashboardCache, "cachedAt">) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, cachedAt: Date.now() }));
+    // Sinkronkan nama ke anjem_user untuk Navbar
+    const navUser = JSON.parse(localStorage.getItem("anjem_user") || "{}");
+    localStorage.setItem("anjem_user", JSON.stringify({ ...navUser, name: data.userName }));
+  } catch {}
+}
 
 const statusLabel: Record<string, string> = {
   pending: "Menunggu Driver",
@@ -43,44 +68,46 @@ const statusBadge: Record<string, string> = {
 export default function CustomerDashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"active" | "history">("active");
-  const [userName, setUserName] = useState("Pengguna");
-  const [userPhone, setUserPhone] = useState("");
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLive, setIsLive] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
+
+  // Baca cache dari localStorage saat render pertama — zero delay, zero loading
+  const initCache = typeof window !== "undefined" ? readCache() : null;
+  const [userName, setUserName] = useState(initCache?.userName || "Pengguna");
+  const [userPhone, setUserPhone] = useState(initCache?.userPhone || "");
+  const [userEmail, setUserEmail] = useState(initCache?.userEmail || "");
+  const [orders, setOrders] = useState<Order[]>(initCache?.orders || []);
+  // isRefreshing: spinner kecil saja, bukan loading blocker
+  const [isRefreshing, setIsRefreshing] = useState(!initCache);
 
   const fetchLiveData = useCallback(async () => {
     try {
-      // Fetch profile and orders in parallel (single round trip each)
+      // Fetch profile dan orders secara paralel
       const [profileRes, ordersRes] = await Promise.all([
         fetch("/api/profile"),
         fetch("/api/customer/orders"),
       ]);
 
+      let name = "Pengguna";
+      let phone = "";
+      let email = "";
+
       if (profileRes.ok) {
         const profileData = await profileRes.json();
         if (profileData.profile) {
-          const name = profileData.profile.full_name || "Pengguna";
-          const phone = profileData.profile.phone || "";
-          const email = profileData.email || "";
+          name = profileData.profile.full_name || "Pengguna";
+          phone = profileData.profile.phone || "";
+          email = profileData.email || "";
           setUserName(name);
           setUserPhone(phone);
           setUserEmail(email);
-          setIsLive(true);
-          // Update localStorage cache for next visit
-          if (typeof window !== "undefined") {
-            try {
-              const cached = JSON.parse(localStorage.getItem("anjem_user") || "{}");
-              localStorage.setItem("anjem_user", JSON.stringify({ ...cached, name }));
-            } catch {}
-          }
         }
       }
 
       if (ordersRes.ok) {
         const ordersData = await ordersRes.json();
-        setOrders(ordersData.orders || []);
+        const freshOrders: Order[] = ordersData.orders || [];
+        setOrders(freshOrders);
+        // Simpan semua ke cache untuk kunjungan berikutnya
+        writeCache({ userName: name, userPhone: phone, userEmail: email, orders: freshOrders });
         return true;
       }
     } catch {}
@@ -88,22 +115,10 @@ export default function CustomerDashboardPage() {
   }, []);
 
   useEffect(() => {
-    // 1. Instantly show cached user info from localStorage (zero network, zero delay)
-    if (typeof window !== "undefined") {
-      try {
-        const savedUser = localStorage.getItem("anjem_user");
-        if (savedUser) {
-          const parsed = JSON.parse(savedUser);
-          if (parsed.name) setUserName(parsed.name);
-        }
-      } catch {}
-    }
-
-    // 2. Fetch live data in background (non-blocking)
     const init = async () => {
       const ok = await fetchLiveData();
       if (!ok) {
-        // Only check Supabase auth if API call failed
+        // API gagal — cek session Supabase
         const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) {
@@ -111,7 +126,7 @@ export default function CustomerDashboardPage() {
           return;
         }
       }
-      setIsLoading(false);
+      setIsRefreshing(false);
     };
     init();
   }, [fetchLiveData, router]);
@@ -136,6 +151,7 @@ export default function CustomerDashboardPage() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("anjem_role");
       localStorage.removeItem("anjem_user");
+      localStorage.removeItem(CACHE_KEY);
     }
     router.push("/masuk");
   };
@@ -159,6 +175,9 @@ export default function CustomerDashboardPage() {
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="badge badge-blue text-[11px]">Akun Pelanggan Kampus</span>
+                  {isRefreshing && (
+                    <RefreshCw size={11} className="animate-spin text-slate-400" />
+                  )}
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                   Halo, {userName}!
@@ -185,23 +204,23 @@ export default function CustomerDashboardPage() {
             </div>
           </div>
 
-          {/* Stats */}
+          {/* Stats — langsung tampil dari cache, angka update saat refresh selesai */}
           <div className="grid grid-cols-3 gap-4 mb-8">
             <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm text-center">
               <div className="text-2xl font-extrabold text-blue-600">
-                {isLoading ? "—" : orders.length}
+                {orders.length}
               </div>
               <div className="text-xs text-slate-500 font-semibold mt-1">Total Pesanan</div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm text-center">
               <div className="text-2xl font-extrabold text-emerald-600">
-                {isLoading ? "—" : historyOrders.filter((o) => o.status === "completed").length}
+                {historyOrders.filter((o) => o.status === "completed").length}
               </div>
               <div className="text-xs text-slate-500 font-semibold mt-1">Pesanan Selesai</div>
             </div>
             <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-sm text-center">
               <div className="text-2xl font-extrabold text-amber-500">
-                {isLoading ? "—" : activeOrders.length}
+                {activeOrders.length}
               </div>
               <div className="text-xs text-slate-500 font-semibold mt-1">Pesanan Aktif</div>
             </div>
@@ -231,13 +250,8 @@ export default function CustomerDashboardPage() {
             </button>
           </div>
 
-          {/* Order List */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-16">
-              <RefreshCw className="animate-spin text-blue-600 mr-3" size={22} />
-              <span className="text-sm text-slate-500">Memuat pesanan...</span>
-            </div>
-          ) : displayedOrders.length === 0 ? (
+          {/* Order List — tampil langsung dari cache, tidak ada loading screen */}
+          {displayedOrders.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 border border-slate-200/90 shadow-sm text-center">
               <ShoppingBag size={40} className="text-slate-300 mx-auto mb-4" />
               <p className="text-slate-600 font-semibold mb-1">
