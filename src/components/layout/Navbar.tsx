@@ -357,21 +357,31 @@ export default function Navbar() {
                     className={cn(
                       "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all",
                       pathname === "/driver"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "text-slate-600 hover:bg-slate-100"
+                        ? "bg-emerald-100 text-emerald-700 shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                     )}
                   >
                     Dashboard Driver
                   </Link>
                   <Link
                     href="/tarif"
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all",
+                      pathname === "/tarif"
+                        ? "bg-emerald-100 text-emerald-700 shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
                   >
                     Struktur Tarif
                   </Link>
                   <Link
                     href="/bantuan"
-                    className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                    className={cn(
+                      "px-3.5 py-1.5 rounded-full text-xs font-bold transition-all",
+                      pathname === "/bantuan"
+                        ? "bg-emerald-100 text-emerald-700 shadow-2xs"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    )}
                   >
                     Bantuan CS
                   </Link>
@@ -658,21 +668,36 @@ export default function Navbar() {
                   <Link
                     href="/driver"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-bold bg-emerald-50 text-emerald-700"
+                    className={cn(
+                      "block px-4 py-2.5 rounded-xl font-bold transition-all",
+                      pathname === "/driver"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "text-slate-700 hover:bg-slate-50 font-medium"
+                    )}
                   >
                     Dashboard Driver
                   </Link>
                   <Link
                     href="/tarif"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-medium text-slate-700 hover:bg-slate-50"
+                    className={cn(
+                      "block px-4 py-2.5 rounded-xl font-bold transition-all",
+                      pathname === "/tarif"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "text-slate-700 hover:bg-slate-50 font-medium"
+                    )}
                   >
                     Struktur Tarif
                   </Link>
                   <Link
                     href="/bantuan"
                     onClick={() => setMobileOpen(false)}
-                    className="block px-4 py-2.5 rounded-xl font-medium text-slate-700 hover:bg-slate-50"
+                    className={cn(
+                      "block px-4 py-2.5 rounded-xl font-bold transition-all",
+                      pathname === "/bantuan"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : "text-slate-700 hover:bg-slate-50 font-medium"
+                    )}
                   >
                     Pusat Bantuan
                   </Link>

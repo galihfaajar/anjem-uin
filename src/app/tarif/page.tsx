@@ -16,10 +16,10 @@ import {
   Package,
   ShoppingBasket,
 } from "lucide-react";
-import { formatRupiah, calculateFare } from "@/lib/pricing/calculateFare";
-import { createClient } from "@/lib/supabase/server";
+import { formatRupiah, calculateFare, DEFAULT_FARE_ZONES } from "@/lib/pricing/calculateFare";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: "Tarif Layanan – Anjem UIN",
@@ -27,7 +27,9 @@ export const metadata: Metadata = {
 };
 
 export default async function TarifPage() {
-  const supabase = await createClient();
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder-project.supabase.co";
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key";
+  const supabase = createSupabaseClient(supabaseUrl, supabaseKey);
 
   const [{ data: fareZones }, { data: services }, { data: popularRoutes }] = await Promise.all([
     supabase.from("fare_zones").select("*").eq("is_active", true).order("sort_order"),
@@ -35,7 +37,7 @@ export default async function TarifPage() {
     supabase.from("popular_routes").select("*").eq("is_active", true).order("sort_order"),
   ]);
 
-  const zones = fareZones || [];
+  const zones = fareZones && fareZones.length > 0 ? fareZones : DEFAULT_FARE_ZONES;
   const svcs = services || [];
   const routes = popularRoutes || [];
 
