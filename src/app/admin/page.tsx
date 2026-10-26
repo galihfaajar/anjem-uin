@@ -1137,34 +1137,34 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Stat Overview Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
             {/* Card 1: Penghasilan — menjumlahkan real penghasilan sesuai filter */}
-            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 overflow-hidden transition-all ${
+            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 min-w-0 transition-all ${
               dateRangeFilter ? "border-emerald-300 ring-1 ring-emerald-100" : "border-slate-200"
             }`}>
               <div>
-                <div className="flex items-center justify-between gap-1 mb-1.5">
-                  <span className="text-xs text-slate-500 font-bold flex items-center gap-1.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-xs text-slate-500 font-bold flex items-center gap-1.5 min-w-0 shrink-0">
                     <Wallet size={13} className="text-emerald-600 shrink-0" />
                     Penghasilan
                   </span>
 
                   {/* Label periode atau pemilih tanggal */}
                   {dateRangeFilter ? (
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg whitespace-nowrap">
-                      <Calendar size={10} className="text-emerald-500 shrink-0" />
-                      {dateRangeLabel}
+                    <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg whitespace-nowrap shrink-0">
+                      <Calendar size={11} className="text-emerald-500 shrink-0" />
+                      <span className="whitespace-nowrap">{dateRangeLabel}</span>
                     </span>
                   ) : (
                     <div className="relative inline-flex items-center">
                       <button
                         type="button"
                         onClick={() => dateInputRef.current?.showPicker?.()}
-                        className="flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200/90 active:bg-slate-200 px-2 py-0.5 rounded-lg border border-slate-200/80 transition-all cursor-pointer shadow-2xs"
+                        className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200/90 active:bg-slate-200 px-2.5 py-1 rounded-lg border border-slate-200/80 transition-all cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
                         title="Pilih tanggal tertentu"
                       >
-                        <Calendar size={11} className="text-emerald-600 shrink-0" />
-                        <span>Semua Waktu</span>
+                        <Calendar size={12} className="text-emerald-600 shrink-0" />
+                        <span className="whitespace-nowrap">Semua Waktu</span>
                       </button>
                       <input
                         ref={dateInputRef}
