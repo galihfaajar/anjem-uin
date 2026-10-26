@@ -157,6 +157,48 @@ ALTER TABLE public.orders ALTER COLUMN customer_id DROP NOT NULL;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS customer_name TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS customer_phone TEXT;
 
+-- Pastikan kolom phone pada profiles boleh NULL
+ALTER TABLE public.profiles ALTER COLUMN phone DROP NOT NULL;
+
+-- Normalisasi nomor yang sudah ada
+UPDATE public.profiles
+SET phone = CASE
+  WHEN phone LIKE '+%' THEN substr(phone, 2)
+  WHEN phone LIKE '0%' THEN '62' || substr(phone, 2)
+  ELSE phone
+END
+WHERE phone IS NOT NULL;
+
+-- Constraint format nomor WhatsApp: ^62[0-9]{9,13}$
+ALTER TABLE public.profiles DROP CONSTRAINT IF EXISTS profiles_phone_format_check;
+ALTER TABLE public.profiles ADD CONSTRAINT profiles_phone_format_check
+  CHECK (phone IS NULL OR phone ~ '^62[0-9]{9,13}$');
+
+-- Bersihkan duplikat nomor sebelum membuat unique index
+-- Menyimpan nomor pada akun terbaru, dan mengosongkan (SET NULL) nomor pada akun lama yang duplikat
+WITH ranked_profiles AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY phone
+           ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+         ) AS rn
+  FROM public.profiles
+  WHERE phone IS NOT NULL
+)
+UPDATE public.profiles
+SET phone = NULL
+WHERE id IN (
+  SELECT id FROM ranked_profiles WHERE rn > 1
+);
+
+-- Unique partial index untuk phone
+DROP INDEX IF EXISTS public.profiles_phone_unique_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS profiles_phone_unique_idx
+  ON public.profiles (phone)
+  WHERE phone IS NOT NULL;
+
+
+
 -- ============================================
 -- BAGIAN 3: HELPER FUNCTION (Bypass RLS saat cek admin)
 -- ============================================
@@ -202,7 +244,9 @@ CREATE POLICY "profiles_read" ON public.profiles FOR SELECT
 CREATE POLICY "profiles_insert" ON public.profiles FOR INSERT
   WITH CHECK (auth.uid() = id);
 CREATE POLICY "profiles_update" ON public.profiles FOR UPDATE
-  USING (auth.uid() = id OR public.is_admin());
+  USING (public.is_admin())
+  WITH CHECK (public.is_admin());
+
 
 -- DRIVERS
 DROP POLICY IF EXISTS "Approved drivers public readable minimal" ON public.drivers;
@@ -313,7 +357,7 @@ CREATE POLICY "Admin manage faqs" ON public.faqs FOR ALL USING (public.is_admin(
 
 INSERT INTO public.services (id, slug, name, description, icon, badge_text, extra_fee, sort_order)
 VALUES
-  ('svc-1', 'antar-jemput-motor', 'Antar Jemput Motor', 'Layanan antar jemput menggunakan motor, cocok untuk mahasiswa yang ingin ke kampus atau area sekitar UIN dengan cepat dan hemat.', 'Bike', 'Terpopuler', 0, 1),
+  ('svc-1', 'antar-jemput-motor', 'Antar Jemput Motor (Ride)', 'Layanan antar jemput menggunakan motor, cocok untuk mahasiswa yang ingin ke kampus atau area sekitar UIN dengan cepat dan hemat.', 'Bike', 'Terpopuler', 0, 1),
   ('svc-2', 'jastip-kuliner', 'Jastip Kuliner & Makanan', 'Pesan makanan atau minuman dari warung, kantin, atau kafe favorit sekitar kampus, diantar ke kos atau gedung kuliah.', 'UtensilsCrossed', null, 2000, 2),
   ('svc-3', 'jastip-belanja', 'Jastip Belanja Kampus', 'Titipkan belanja keperluan kuliah seperti ATK, fotokopi, atau kebutuhan sehari-hari.', 'ShoppingBasket', null, 2000, 3),
   ('svc-4', 'kirim-dokumen', 'Kirim Dokumen & Paket Kilat', 'Kirim berkas, dokumen penting, atau paket ringan ke lokasi di sekitar kampus UIN dengan aman dan cepat.', 'Package', null, 0, 4)
@@ -363,21 +407,51 @@ SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
   user_role TEXT;
+  raw_phone TEXT;
+  clean_phone TEXT;
+  existing_id UUID;
 BEGIN
   user_role := COALESCE(NEW.raw_user_meta_data->>'role', 'customer');
-  
+  raw_phone := NEW.raw_user_meta_data->>'phone';
+
+  -- Normalisasi phone jika diinput saat registrasi
+  IF raw_phone IS NOT NULL AND trim(raw_phone) <> '' THEN
+    clean_phone := regexp_replace(trim(raw_phone), '[^0-9+]', '', 'g');
+    IF clean_phone LIKE '+%' THEN
+      clean_phone := substr(clean_phone, 2);
+    END IF;
+    IF clean_phone LIKE '0%' THEN
+      clean_phone := '62' || substr(clean_phone, 2);
+    END IF;
+
+    -- Jika format tidak valid ^62[0-9]{9,13}$, jadikan NULL agar trigger tidak crash
+    IF clean_phone !~ '^62[0-9]{9,13}$' THEN
+      clean_phone := NULL;
+    END IF;
+
+    -- Jika nomor sudah terpakai akun lain, jadikan NULL agar pembuatan akun tetap berhasil
+    IF clean_phone IS NOT NULL THEN
+      SELECT id INTO existing_id FROM public.profiles WHERE phone = clean_phone LIMIT 1;
+      IF existing_id IS NOT NULL AND existing_id <> NEW.id THEN
+        clean_phone := NULL;
+      END IF;
+    END IF;
+  ELSE
+    clean_phone := NULL;
+  END IF;
+
   INSERT INTO public.profiles (id, full_name, phone, role)
   VALUES (
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
-    NEW.raw_user_meta_data->>'phone',
+    clean_phone,
     user_role
   )
   ON CONFLICT (id) DO UPDATE
     SET full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
         phone = COALESCE(EXCLUDED.phone, profiles.phone),
         role = COALESCE(EXCLUDED.role, profiles.role);
-  
+
   -- Jika role driver, otomatis buat record driver (status pending)
   IF user_role = 'driver' THEN
     INSERT INTO public.drivers (profile_id, plate_number, vehicle_type, status)
@@ -391,6 +465,18 @@ BEGIN
   END IF;
 
   RETURN NEW;
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Fallback aman: pastikan akun tetap terdaftar di tabel profiles
+    INSERT INTO public.profiles (id, full_name, phone, role)
+    VALUES (
+      NEW.id,
+      COALESCE(NEW.raw_user_meta_data->>'full_name', SPLIT_PART(NEW.email, '@', 1)),
+      NULL,
+      user_role
+    )
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
 END;
 $$;
 
@@ -398,6 +484,106 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================
+-- BAGIAN 8: RPC SET_MY_PHONE & TRIGGER ORDERS
+-- ============================================
+
+-- RPC set_my_phone (SECURITY DEFINER, hanya mengubah kolom phone milik auth.uid())
+CREATE OR REPLACE FUNCTION public.set_my_phone(new_phone TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  caller_id UUID;
+  clean_phone TEXT;
+  existing_id UUID;
+BEGIN
+  caller_id := auth.uid();
+  IF caller_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: Anda harus login untuk menyimpan nomor WhatsApp.';
+  END IF;
+
+  IF new_phone IS NULL OR trim(new_phone) = '' THEN
+    RAISE EXCEPTION 'Nomor WhatsApp belum diisi.';
+  END IF;
+
+  clean_phone := regexp_replace(trim(new_phone), '[^0-9+]', '', 'g');
+  IF clean_phone LIKE '+%' THEN
+    clean_phone := substr(clean_phone, 2);
+  END IF;
+  IF clean_phone LIKE '0%' THEN
+    clean_phone := '62' || substr(clean_phone, 2);
+  END IF;
+
+  IF clean_phone !~ '^62[0-9]{9,13}$' THEN
+    RAISE EXCEPTION 'Format nomor WhatsApp tidak valid. Gunakan format yang valid diawali 62 atau 08 (contoh: 081234567890).';
+  END IF;
+
+  SELECT id INTO existing_id
+  FROM public.profiles
+  WHERE phone = clean_phone AND id <> caller_id
+  LIMIT 1;
+
+  IF existing_id IS NOT NULL THEN
+    RAISE EXCEPTION 'Nomor WhatsApp ini sudah terdaftar pada akun lain.';
+  END IF;
+
+  UPDATE public.profiles
+  SET phone = clean_phone,
+      updated_at = NOW()
+  WHERE id = caller_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'phone', clean_phone,
+    'message', 'Nomor WhatsApp berhasil diperbarui.'
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.set_my_phone(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_my_phone(TEXT) TO authenticated;
+
+-- Trigger BEFORE INSERT pada orders: Tolak pesanan bila pelanggan belum punya nomor WhatsApp
+CREATE OR REPLACE FUNCTION public.check_customer_phone_before_order()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  cust_phone TEXT;
+BEGIN
+  IF NEW.customer_id IS NOT NULL THEN
+    SELECT phone INTO cust_phone
+    FROM public.profiles
+    WHERE id = NEW.customer_id;
+
+    IF cust_phone IS NULL OR trim(cust_phone) = '' THEN
+      RAISE EXCEPTION 'Profil pelanggan belum memiliki nomor WhatsApp yang terdaftar. Harap lengkapi nomor WhatsApp terlebih dahulu.';
+    END IF;
+
+    IF NEW.customer_phone IS NULL OR trim(NEW.customer_phone) = '' THEN
+      NEW.customer_phone := cust_phone;
+    END IF;
+  ELSE
+    IF NEW.customer_phone IS NULL OR trim(NEW.customer_phone) = '' THEN
+      RAISE EXCEPTION 'Nomor WhatsApp pemesan wajib diisi.';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_check_customer_phone ON public.orders;
+CREATE TRIGGER trg_check_customer_phone
+  BEFORE INSERT ON public.orders
+  FOR EACH ROW
+  EXECUTE FUNCTION public.check_customer_phone_before_order();
 
 -- ============================================
 -- SELESAI! Periksa tabel di Table Editor Supabase.

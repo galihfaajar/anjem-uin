@@ -6,7 +6,7 @@
 -- 1. LAYANAN
 INSERT INTO public.services (id, slug, name, description, icon, badge_text, extra_fee, is_active, sort_order)
 VALUES
-  ('svc-1', 'antar-jemput-motor', 'Antar Jemput Motor', 'Naik motor langsung dari lokasi kamu ke tujuan. Cepat, aman, dan terjangkau untuk mobilitas harian mahasiswa.', 'Bike', 'Paling Populer', 0, TRUE, 1),
+  ('svc-1', 'antar-jemput-motor', 'Antar Jemput Motor (Ride)', 'Naik motor langsung dari lokasi kamu ke tujuan. Cepat, aman, dan terjangkau untuk mobilitas harian mahasiswa.', 'Bike', 'Paling Populer', 0, TRUE, 1),
   ('svc-2', 'jastip-kuliner', 'Jastip Kuliner & Makanan', 'Titip beli makanan, minuman, atau jajanan favoritmu. Driver belikan dan antar langsung ke kosan.', 'UtensilsCrossed', 'Favorit Mahasiswa', 2000, TRUE, 2),
   ('svc-3', 'jastip-belanja', 'Jastip Belanja Harian & Pasar', 'Titip belanja kebutuhan sehari-hari dari minimarket, pasar, atau toko langgananmu.', 'ShoppingBasket', 'Praktis & Hemat', 2000, TRUE, 3),
   ('svc-4', 'kirim-dokumen', 'Kirim Dokumen & Paket Kilat', 'Kirim surat, berkas tugas, atau paket kecil antar lokasi di area layanan dengan cepat.', 'Package', 'Instan Sampai', 0, TRUE, 4)

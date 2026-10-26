@@ -41,6 +41,9 @@ export const metadata: Metadata = {
   },
 };
 
+import ScrollToTopOnNavigate from "@/components/layout/ScrollToTopOnNavigate";
+import AuthRedirectListener from "@/components/layout/AuthRedirectListener";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -60,7 +63,11 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ScrollToTopOnNavigate />
+        <AuthRedirectListener />
+        {children}
+      </body>
     </html>
   );
 }

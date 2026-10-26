@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { validatePhoneNumber, normalizePhoneNumber } from "@/lib/phone";
 
 function GoogleIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -79,7 +80,14 @@ export default function AuthSliderCard({ initialMode = "masuk" }: AuthSliderCard
     if (errorParam) {
       setLoginError(decodeURIComponent(errorParam));
     }
-  }, [errorParam]);
+
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        router.replace(redirectTo || "/dashboard");
+      }
+    });
+  }, [errorParam, redirectTo, router]);
 
   // Handle Login Submit
   const handleLogin = async (e: React.FormEvent) => {
@@ -155,17 +163,43 @@ export default function AuthSliderCard({ initialMode = "masuk" }: AuthSliderCard
       return;
     }
 
+    let normalizedPhone: string | null = null;
+    if (regPhone.trim()) {
+      const phoneValidation = validatePhoneNumber(regPhone);
+      if (!phoneValidation.valid) {
+        setRegError(phoneValidation.error || "Format nomor WhatsApp tidak valid (contoh: 081234567890).");
+        return;
+      }
+      normalizedPhone = phoneValidation.normalized;
+    }
+
     setRegLoading(true);
 
     try {
       const supabase = createClient();
+
+      // Periksa apakah nomor WhatsApp sudah terdaftar
+      if (normalizedPhone) {
+        const { data: existingProfile } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("phone", normalizedPhone)
+          .maybeSingle();
+
+        if (existingProfile) {
+          setRegError("Nomor WhatsApp ini sudah terdaftar pada akun lain. Silakan gunakan nomor lain.");
+          setRegLoading(false);
+          return;
+        }
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: regEmail,
         password: regPassword,
         options: {
           data: {
             full_name: regName,
-            phone: regPhone,
+            phone: normalizedPhone,
             role: "customer",
           },
         },
@@ -196,12 +230,10 @@ export default function AuthSliderCard({ initialMode = "masuk" }: AuthSliderCard
   const handleGoogleAuth = async () => {
     setGoogleLoading(true);
     setLoginError("");
-    setRegError("");
     try {
       const supabase = createClient();
-      const redirectUrl = `${window.location.origin}/auth/callback${
-        redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""
-      }`;
+      const targetDestination = redirectTo || "/dashboard";
+      const redirectUrl = `${window.location.origin}/auth/callback?next=${encodeURIComponent(targetDestination)}`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

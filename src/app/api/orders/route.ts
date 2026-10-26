@@ -2,33 +2,52 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { calculateFare } from "@/lib/pricing/calculateFare";
 import { createClient } from "@/lib/supabase/server";
+import { normalizePhoneNumber } from "@/lib/phone";
 import type { Order, OrderEvent } from "@/types";
 
 const createOrderSchema = z.object({
-  customerName: z.string().min(2, "Nama minimal 2 karakter"),
-  customerPhone: z.string().min(8, "Nomor WhatsApp/HP minimal 8 digit"),
+  customerName: z.string().trim().min(2, "Nama pemesan minimal 2 karakter"),
+  customerPhone: z
+    .string({ message: "Nomor WhatsApp belum diisi" })
+    .trim()
+    .min(1, "Nomor WhatsApp belum diisi")
+    .regex(/^62[0-9]{9,13}$/, "Format nomor WhatsApp tidak valid (contoh: 081234567890 atau 6281234567890)"),
   serviceId: z.string().min(1, "Layanan wajib dipilih"),
-  pickupName: z.string().min(3, "Titik jemput minimal 3 karakter"),
+  pickupName: z.string().trim().min(3, "Titik penjemputan minimal 3 karakter"),
   pickupLat: z.number().default(-7.5576),
   pickupLng: z.number().default(110.7706),
-  dropoffName: z.string().min(3, "Titik tujuan minimal 3 karakter"),
+  dropoffName: z.string().trim().min(3, "Titik pengantaran minimal 3 karakter"),
   dropoffLat: z.number().default(-7.5576),
   dropoffLng: z.number().default(110.7706),
   distanceKm: z.number().min(0.1, "Jarak minimal 0.1 km").max(30, "Jarak melebihi batas 30 km"),
   itemNotes: z.string().optional().nullable(),
   itemsEstimate: z.number().optional().nullable(),
-  paymentMethod: z.enum(["cash", "qris_driver"]),
+  paymentMethod: z.enum(["cash", "qris_driver"], {
+    message: "Pilih metode pembayaran yang valid",
+  }),
 });
 
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    // Normalisasi format nomor WhatsApp jika dikirimkan
+    if (typeof body.customerPhone === "string" && body.customerPhone.trim()) {
+      body.customerPhone = normalizePhoneNumber(body.customerPhone);
+    }
+
     const parsed = createOrderSchema.safeParse(body);
 
     if (!parsed.success) {
+      const flat = parsed.error.flatten();
+      const firstError =
+        Object.values(flat.fieldErrors).flat()[0] ||
+        flat.formErrors[0] ||
+        "Data pesanan tidak lengkap atau tidak valid";
+
       return NextResponse.json(
-        { error: "Data pesanan tidak valid", details: parsed.error.flatten() },
+        { error: firstError, details: flat },
         { status: 400 }
       );
     }
@@ -98,7 +117,10 @@ export async function POST(request: Request) {
 
     if (insertErr) {
       console.error("Error inserting order:", insertErr);
-      return NextResponse.json({ error: "Gagal menyimpan pesanan ke database" }, { status: 500 });
+      return NextResponse.json(
+        { error: insertErr.message || "Gagal menyimpan pesanan ke database" },
+        { status: 500 }
+      );
     }
 
     await supabase.from("order_events").insert({

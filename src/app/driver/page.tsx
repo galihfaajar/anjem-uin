@@ -23,9 +23,16 @@ import {
   LogOut,
   RefreshCw,
   Loader2,
+  Eye,
+  FileDown,
+  FileText,
 } from "lucide-react";
 import { formatRupiah } from "@/lib/pricing/calculateFare";
 import { buildWALink } from "@/lib/utils";
+import { generateInvoicePdf } from "@/lib/exportInvoicePdf";
+import { buildDriverDirectWALink } from "@/lib/driverChat";
+import OrderDetailModal from "@/components/driver/OrderDetailModal";
+import DriverChatModal from "@/components/driver/DriverChatModal";
 import type { Order } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 
@@ -48,6 +55,10 @@ export default function DriverDashboardPage() {
   const [takingOrderId, setTakingOrderId] = useState<string | null>(null);
   // Track status update loading per order
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  // Modals state
+  const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<Order | null>(null);
+  const [selectedOrderForChat, setSelectedOrderForChat] = useState<Order | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
   // Debounce concurrent fetch calls
   const isFetchingRef = { current: false };
 
@@ -176,6 +187,23 @@ export default function DriverDashboardPage() {
       } catch {}
     }
     showToast(nextVal ? "Status: ONLINE (Siap mengambil orderan baru)" : "Status: OFFLINE (Sedang istirahat)");
+  };
+
+  const handleExportInvoice = (ord: Order) => {
+    setExportingId(ord.id);
+    try {
+      generateInvoicePdf(ord, {
+        name: driverName,
+        plate: driverPlate,
+        vehicle: driverVehicle,
+      });
+      showToast(`Invoice PDF ${ord.id} berhasil diunduh!`);
+    } catch (err) {
+      console.error(err);
+      showToast("Gagal mengunduh invoice PDF.");
+    } finally {
+      setTimeout(() => setExportingId(null), 800);
+    }
   };
 
   const handleTakeOrder = async (orderId: string) => {
@@ -480,23 +508,34 @@ export default function DriverDashboardPage() {
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => handleTakeOrder(ord.id)}
-                          disabled={hasActiveOrder || !isOnline || takingOrderId !== null}
-                          className={`text-xs py-2 px-4 rounded-xl font-bold transition-all self-end sm:self-center flex items-center gap-1.5 ${
-                            hasActiveOrder
-                              ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                        <div className="flex items-center gap-2 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrderForDetail(ord)}
+                            className="btn btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Eye size={13} />
+                            Detail
+                          </button>
+
+                          <button
+                            onClick={() => handleTakeOrder(ord.id)}
+                            disabled={hasActiveOrder || !isOnline || takingOrderId !== null}
+                            className={`text-xs py-2 px-4 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                              hasActiveOrder
+                                ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                                : takingOrderId === ord.id
+                                ? "bg-blue-300 text-white border-0 cursor-wait"
+                                : "btn btn-primary shadow-sm hover:scale-102 cursor-pointer"
+                            }`}
+                          >
+                            {hasActiveOrder
+                              ? "Selesaikan Order Aktif Dahulu"
                               : takingOrderId === ord.id
-                              ? "bg-blue-300 text-white border-0 cursor-wait"
-                              : "btn btn-primary shadow-sm hover:scale-102 cursor-pointer"
-                          }`}
-                        >
-                          {hasActiveOrder
-                            ? "Selesaikan Order Aktif Dahulu"
-                            : takingOrderId === ord.id
-                            ? "Mengambil..."
-                            : "Ambil Order Ini"}
-                        </button>
+                              ? "Mengambil..."
+                              : "Ambil Order Ini"}
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -512,13 +551,6 @@ export default function DriverDashboardPage() {
                     </div>
                   ) : (
                     myActiveOrders.map((ord) => {
-                      const waCustHref = ord.customer_phone
-                        ? buildWALink(
-                            ord.customer_phone,
-                            `Halo kak ${ord.customer_name}, saya driver Anjem UIN (${driverName}) untuk order ${ord.id}. Saya sedang menuju lokasi jemput ya.`
-                          )
-                        : "#";
-
                       return (
                         <div
                           key={ord.id}
@@ -564,16 +596,24 @@ export default function DriverDashboardPage() {
                             </div>
 
                             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrderForDetail(ord)}
+                                className="btn btn-secondary text-xs py-2 px-3 flex items-center justify-center gap-1.5 flex-1 sm:flex-initial cursor-pointer"
+                              >
+                                <Eye size={13} />
+                                Detail
+                              </button>
+
                               {ord.customer_phone && (
-                                <a
-                                  href={waCustHref}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedOrderForChat(ord)}
+                                  className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2 px-3 border-0 flex items-center justify-center gap-1.5 flex-1 sm:flex-initial cursor-pointer"
                                 >
                                   <MessageCircle size={14} />
                                   Chat WA
-                                </a>
+                                </button>
                               )}
 
                               {ord.status === "assigned" ? (
@@ -628,23 +668,74 @@ export default function DriverDashboardPage() {
                     completedOrders.map((ord) => (
                       <div
                         key={ord.id}
-                        className="py-3 flex items-center justify-between text-xs"
+                        className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-50/60 p-2.5 rounded-xl transition-colors"
                       >
-                        <div>
-                          <div className="font-bold text-slate-800">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200">
+                              {ord.id}
+                            </span>
+                            <span className="badge badge-emerald text-[10px]">Selesai</span>
+                            <span className="text-[11px] font-semibold text-slate-600">
+                              {ord.service_name || (ord as any).service?.name || "Layanan"}
+                            </span>
+                          </div>
+                          <div className="font-bold text-slate-800 text-xs sm:text-sm">
                             {ord.pickup_name} → {ord.dropoff_name}
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            {ord.id} • {ord.distance_km} km • Pemesan: {ord.customer_name}
-                          </span>
+                          <div className="text-[10px] text-slate-400">
+                            {ord.distance_km} km • Pemesan: {ord.customer_name || "Pelanggan"}
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <span className="font-extrabold text-emerald-600 block">
-                            +{formatRupiah(ord.fare)}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {ord.payment_method === "cash" ? "Tunai" : "QRIS"}
-                          </span>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                          <div className="sm:text-right">
+                            <span className="font-extrabold text-emerald-600 block text-sm">
+                              +{formatRupiah(ord.fare)}
+                            </span>
+                            <span className="text-[10px] text-slate-400">
+                              {ord.payment_method === "cash" ? "Tunai" : "QRIS"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedOrderForDetail(ord)}
+                              className="btn btn-secondary text-xs py-1.5 px-2.5 flex items-center gap-1 cursor-pointer"
+                              title="Lihat Detail Pesanan"
+                            >
+                              <Eye size={13} />
+                              <span className="hidden sm:inline">Detail</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleExportInvoice(ord)}
+                              disabled={exportingId === ord.id}
+                              className="btn bg-slate-900 hover:bg-slate-800 text-white text-xs py-1.5 px-2.5 border-0 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              title="Unduh Invoice PDF"
+                            >
+                              {exportingId === ord.id ? (
+                                <Loader2 size={13} className="animate-spin text-emerald-400" />
+                              ) : (
+                                <FileDown size={13} className="text-emerald-400" />
+                              )}
+                              <span>PDF</span>
+                            </button>
+
+                            {ord.customer_phone && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrderForChat(ord)}
+                                className="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-1.5 px-2.5 border-0 flex items-center gap-1 cursor-pointer"
+                                title="Chat WhatsApp Pemesan"
+                              >
+                                <MessageCircle size={13} />
+                                <span className="hidden sm:inline">WA</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))
@@ -654,6 +745,41 @@ export default function DriverDashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Modal Detail Order */}
+        <OrderDetailModal
+          isOpen={selectedOrderForDetail !== null}
+          onClose={() => setSelectedOrderForDetail(null)}
+          order={selectedOrderForDetail}
+          driverName={driverName}
+          driverInfo={{
+            name: driverName,
+            plate: driverPlate,
+            vehicle: driverVehicle,
+          }}
+          hasActiveOrder={hasActiveOrder}
+          isTaking={takingOrderId === selectedOrderForDetail?.id}
+          isUpdating={updatingOrderId === selectedOrderForDetail?.id}
+          onTakeOrder={(id) => {
+            setSelectedOrderForDetail(null);
+            handleTakeOrder(id);
+          }}
+          onUpdateStatus={(id, status) => {
+            handleUpdateStatus(id, status);
+            setSelectedOrderForDetail(null);
+          }}
+          onOpenChat={(ord) => {
+            setSelectedOrderForChat(ord);
+          }}
+        />
+
+        {/* Modal Chat WhatsApp Driver */}
+        <DriverChatModal
+          isOpen={selectedOrderForChat !== null}
+          onClose={() => setSelectedOrderForChat(null)}
+          order={selectedOrderForChat}
+          driverName={driverName}
+        />
       </main>
 
       <Footer />

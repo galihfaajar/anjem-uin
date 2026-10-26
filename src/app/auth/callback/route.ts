@@ -4,7 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") || searchParams.get("redirect") || "/dashboard";
+  let next = searchParams.get("next") || searchParams.get("redirect") || "/dashboard";
+
+  // Jika next kosong atau mengarah ke root '/', arahkan langsung ke /dashboard pesanan
+  if (!next || next === "/" || next.trim() === "") {
+    next = "/dashboard";
+  }
 
   if (code) {
     try {
@@ -20,13 +25,14 @@ export async function GET(request: Request) {
 
         const role = profile?.role || data.user.user_metadata?.role || "customer";
 
-        // Jika tujuan default (/dashboard), sesuaikan berdasarkan role
+        // Arahkan ke dashboard sesuai role
         if (next === "/dashboard") {
           if (role === "admin") {
             return NextResponse.redirect(`${origin}/admin`);
           } else if (role === "driver") {
             return NextResponse.redirect(`${origin}/driver`);
           }
+          return NextResponse.redirect(`${origin}/dashboard`);
         }
 
         return NextResponse.redirect(`${origin}${next}`);
