@@ -48,7 +48,7 @@ export default function StatsSection() {
   ];
 
   return (
-    <section className="py-8 -mt-8 relative z-10">
+    <section className="pt-10 pb-8 sm:pt-14 sm:pb-10 relative z-10">
       <div className="container-main">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {stats.map((stat) => {

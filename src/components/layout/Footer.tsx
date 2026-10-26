@@ -13,7 +13,6 @@ const footerLinks = {
   eksplorasi: [
     { label: "Kalkulator Tarif Ongkir", href: "/tarif" },
     { label: "Ulasan & Testimoni", href: "/ulasan" },
-    { label: "Jangkauan Wilayah Solo Raya", href: "/#jangkauan" },
     { label: "Tanya Jawab (FAQ)", href: "/#faq" },
   ],
   bantuan: [

@@ -1,24 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Map } from "lucide-react";
-import dynamic from "next/dynamic";
-import { siteConfig } from "@/config/site";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Faq } from "@/types";
-
-// Lazy-load map to avoid SSR issues with Leaflet
-const ServiceAreaMap = dynamic(() => import("./ServiceAreaMap"), {
-  ssr: false,
-  loading: () => (
-    <div
-      className="skeleton rounded-2xl"
-      style={{ height: 380 }}
-      role="status"
-      aria-label="Memuat peta..."
-    />
-  ),
-});
 
 const DEFAULT_FAQS: Faq[] = [
   {
@@ -104,38 +89,10 @@ export default function CoverageAndFaqSection({
   const faqs = propFaqs && propFaqs.length > 0 ? propFaqs : DEFAULT_FAQS;
 
   return (
-    <section id="jangkauan" className="py-20 bg-white">
+    <section id="faq" className="py-20 bg-white">
       <div className="container-main">
-        {/* === COVERAGE MAP === */}
-        <div className="mb-20">
-          <div className="text-center mb-10">
-            <span className="section-eyebrow">WILAYAH JANGKAUAN</span>
-            <h2 className="section-title mb-4">Area Layanan Kami</h2>
-            <p className="section-subtitle mx-auto">
-              Melayani kawasan kampus UIN Raden Mas Said Surakarta dan sekitarnya.
-              Area resmi akan diperbarui setelah konfirmasi operasional.
-            </p>
-          </div>
-
-          {/* Area chips */}
-          <div className="flex flex-wrap gap-2 justify-center mb-8">
-            {siteConfig.serviceArea.regions.map((region) => (
-              <span
-                key={region}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-200"
-              >
-                <Map size={12} />
-                {region}
-              </span>
-            ))}
-          </div>
-
-          {/* Map */}
-          <ServiceAreaMap />
-        </div>
-
         {/* === FAQ === */}
-        <div id="faq">
+        <div>
           <div className="text-center mb-10">
             <span className="section-eyebrow">TANYA JAWAB</span>
             <h2 className="section-title mb-4">Pertanyaan yang Sering Diajukan</h2>

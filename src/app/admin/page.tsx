@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
+  FileSpreadsheet,
   Download,
   Filter,
   Search,
@@ -45,6 +46,7 @@ import { formatRupiah } from "@/lib/pricing/calculateFare";
 import { formatDate, buildWALink } from "@/lib/utils";
 import type { Order, Driver, DriverStatus, OrderStatus, Service, FareZone } from "@/types";
 import { createClient } from "@/lib/supabase/client";
+import * as XLSX from "xlsx";
 
 interface AdminReview {
   id: string;
@@ -934,11 +936,16 @@ export default function AdminDashboardPage() {
     }
   };
 
-  // CSV Export — mengikuti filter aktif (dateRangeFilter + statusFilter + searchOrder)
-  const handleExportCSV = () => {
-    // Gunakan filteredOrders agar CSV sesuai filter yang sedang aktif.
+  // Excel Export — mengikuti filter aktif (dateRangeFilter + statusFilter + searchOrder)
+  const handleExportExcel = () => {
+    // Gunakan filteredOrders agar file Excel sesuai filter yang sedang aktif.
     // Jika semua filter clear maka filteredOrders = seluruh data.
     const exportData = filteredOrders;
+
+    if (exportData.length === 0) {
+      showToast("Tidak ada data order untuk diekspor.");
+      return;
+    }
 
     const headers = [
       "ID Order",
@@ -961,37 +968,53 @@ export default function AdminDashboardPage() {
       const dt = formatOrderDateTime(o.created_at);
       return [
         o.id,
-        `"${dt.date}"`,
-        `"${dt.time}"`,
-        `"${o.customer_name || ""}"`,
-        `"${o.customer_phone || ""}"`,
-        `"${o.service_name || ""}"`,
-        `"${o.pickup_name}"`,
-        `"${o.dropoff_name}"`,
-        o.distance_km,
-        o.fare,
-        `"${o.driver_name || "-"}"`,
-        o.payment_method,
+        dt.date,
+        dt.time,
+        o.customer_name || "-",
+        o.customer_phone || "-",
+        o.service_name || "-",
+        o.pickup_name || "-",
+        o.dropoff_name || "-",
+        Number(o.distance_km) || 0,
+        Number(o.fare) || 0,
+        o.driver_name || "-",
+        o.payment_method || "-",
         o.status,
-        `"${o.created_at || ""}"`,
+        o.created_at || "",
       ];
     });
 
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    // Format lebar kolom agar rapi saat dibuka di Microsoft Excel / Google Sheets
+    worksheet["!cols"] = [
+      { wch: 22 }, // ID Order
+      { wch: 14 }, // Tanggal
+      { wch: 10 }, // Jam
+      { wch: 22 }, // Nama Pelanggan
+      { wch: 16 }, // No Telepon
+      { wch: 20 }, // Layanan
+      { wch: 28 }, // Titik Jemput
+      { wch: 28 }, // Titik Tujuan
+      { wch: 12 }, // Jarak (km)
+      { wch: 14 }, // Ongkos (Rp)
+      { wch: 20 }, // Driver
+      { wch: 18 }, // Metode Pembayaran
+      { wch: 14 }, // Status
+      { wch: 24 }, // Waktu ISO
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Laporan Order");
+
     // Nama file menyertakan info filter agar mudah diidentifikasi
     const filterSuffix = dateRangeFilter ? `_${dateRangeFilter}` : "_semua";
-    link.setAttribute("download", `laporan_order_anjem_uin${filterSuffix}_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const fileName = `laporan_order_anjem_uin${filterSuffix}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+    XLSX.writeFile(workbook, fileName);
+
     const filterDesc = dateRangeLabel ? ` (${dateRangeLabel})` : " (Semua Data)";
-    showToast(`CSV${filterDesc} berhasil diunduh — ${exportData.length} order.`);
+    showToast(`Excel${filterDesc} berhasil diunduh — ${exportData.length} order.`);
   };
 
   const handleLogout = async () => {
@@ -1054,12 +1077,12 @@ export default function AdminDashboardPage() {
                 Refresh
               </button>
               <button
-                onClick={handleExportCSV}
+                onClick={handleExportExcel}
                 className="btn btn-secondary text-xs flex items-center gap-1.5 relative group"
-                title={dateRangeLabel ? `Ekspor CSV: ${dateRangeLabel}` : "Ekspor CSV: Semua Data"}
+                title={dateRangeLabel ? `Ekspor Excel: ${dateRangeLabel}` : "Ekspor Excel: Semua Data"}
               >
-                <Download size={14} />
-                Ekspor CSV
+                <FileSpreadsheet size={14} className="text-emerald-600" />
+                Ekspor Excel (.xlsx)
                 {dateRangeFilter && (
                   <span className="absolute -top-1.5 -right-1.5 w-2 h-2 rounded-full bg-blue-500 border border-white" />
                 )}
@@ -1291,15 +1314,15 @@ export default function AdminDashboardPage() {
                     )}
                   </h3>
                 </div>
-                {/* Tombol Export CSV inline di header orders (shortcut) */}
+                {/* Tombol Export Excel inline di header orders (shortcut) */}
                 <button
                   type="button"
-                  onClick={handleExportCSV}
-                  className="text-xs font-semibold text-slate-600 hover:text-blue-600 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-white transition-all cursor-pointer"
-                  title={dateRangeLabel ? `Ekspor CSV: ${dateRangeLabel}` : "Ekspor CSV: Semua Data"}
+                  onClick={handleExportExcel}
+                  className="text-xs font-semibold text-slate-600 hover:text-emerald-700 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 hover:bg-emerald-50/50 hover:border-emerald-200 transition-all cursor-pointer"
+                  title={dateRangeLabel ? `Ekspor Excel: ${dateRangeLabel}` : "Ekspor Excel: Semua Data"}
                 >
-                  <Download size={12} />
-                  <span>CSV{dateRangeFilter ? ` (${dateRangeLabel})` : " (Semua)"}</span>
+                  <FileSpreadsheet size={12} className="text-emerald-600" />
+                  <span>Excel{dateRangeFilter ? ` (${dateRangeLabel})` : " (Semua)"}</span>
                 </button>
               </div>
             )}

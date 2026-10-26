@@ -430,14 +430,6 @@ export default function Navbar() {
                     Ulasan
                   </Link>
 
-                  <button
-                    type="button"
-                    onClick={() => handleNavClick("#jangkauan")}
-                    className="px-3.5 py-2 rounded-full text-sm font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
-                  >
-                    Jangkauan
-                  </button>
-
                   <Link
                     href="/bantuan"
                     className="px-3.5 py-2 rounded-full text-sm font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-all"
@@ -700,12 +692,6 @@ export default function Navbar() {
                   >
                     Ulasan Pelanggan
                   </Link>
-                  <button
-                    onClick={() => handleNavClick("#jangkauan")}
-                    className="w-full text-left px-4 py-2.5 rounded-xl font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-600"
-                  >
-                    Jangkauan Wilayah
-                  </button>
                   <Link
                     href="/bantuan"
                     onClick={() => setMobileOpen(false)}
