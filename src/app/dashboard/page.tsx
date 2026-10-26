@@ -52,20 +52,32 @@ export default function CustomerDashboardPage() {
 
   const fetchLiveData = useCallback(async () => {
     try {
-      // Fetch profile
-      const profileRes = await fetch("/api/profile");
+      // Fetch profile and orders in parallel (single round trip each)
+      const [profileRes, ordersRes] = await Promise.all([
+        fetch("/api/profile"),
+        fetch("/api/customer/orders"),
+      ]);
+
       if (profileRes.ok) {
         const profileData = await profileRes.json();
         if (profileData.profile) {
-          setUserName(profileData.profile.full_name || "Pengguna");
-          setUserPhone(profileData.profile.phone || "");
-          setUserEmail(profileData.email || "");
+          const name = profileData.profile.full_name || "Pengguna";
+          const phone = profileData.profile.phone || "";
+          const email = profileData.email || "";
+          setUserName(name);
+          setUserPhone(phone);
+          setUserEmail(email);
           setIsLive(true);
+          // Update localStorage cache for next visit
+          if (typeof window !== "undefined") {
+            try {
+              const cached = JSON.parse(localStorage.getItem("anjem_user") || "{}");
+              localStorage.setItem("anjem_user", JSON.stringify({ ...cached, name }));
+            } catch {}
+          }
         }
       }
 
-      // Fetch orders
-      const ordersRes = await fetch("/api/customer/orders");
       if (ordersRes.ok) {
         const ordersData = await ordersRes.json();
         setOrders(ordersData.orders || []);
@@ -76,12 +88,25 @@ export default function CustomerDashboardPage() {
   }, []);
 
   useEffect(() => {
+    // 1. Instantly show cached user info from localStorage (zero network, zero delay)
+    if (typeof window !== "undefined") {
+      try {
+        const savedUser = localStorage.getItem("anjem_user");
+        if (savedUser) {
+          const parsed = JSON.parse(savedUser);
+          if (parsed.name) setUserName(parsed.name);
+        }
+      } catch {}
+    }
+
+    // 2. Fetch live data in background (non-blocking)
     const init = async () => {
       const ok = await fetchLiveData();
       if (!ok) {
+        // Only check Supabase auth if API call failed
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) {
           router.push("/masuk");
           return;
         }

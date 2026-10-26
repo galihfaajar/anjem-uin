@@ -29,12 +29,22 @@ export default function Navbar() {
   // Mounted state to prevent SSR hydration mismatch
   const [mounted, setMounted] = useState(false);
 
-  // Auth / Role State
+  // Auth / Role State - initialize from localStorage cache synchronously for instant display
   const [role, setRole] = useState<"admin" | "driver" | "customer" | null>(null);
   const [userName, setUserName] = useState<string>("");
 
   useEffect(() => {
     setMounted(true);
+    // Load from localStorage cache on first client render (instant, no network)
+    const savedRole = localStorage.getItem("anjem_role");
+    if (savedRole) setRole(savedRole as any);
+    try {
+      const savedUser = localStorage.getItem("anjem_user");
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        if (parsed.name) setUserName(parsed.name);
+      }
+    } catch {}
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
@@ -42,27 +52,37 @@ export default function Navbar() {
 
   // Sync session with Supabase Auth and listen to state changes
   useEffect(() => {
-    // Quick load from local cache on client mount (safe from SSR hydration)
-    if (typeof window !== "undefined") {
-      const savedRole = localStorage.getItem("anjem_role");
-      if (savedRole) setRole(savedRole as any);
-
-      const savedUser = localStorage.getItem("anjem_user");
-      if (savedUser) {
-        try {
-          const parsed = JSON.parse(savedUser);
-          if (parsed.name) setUserName(parsed.name);
-        } catch {}
-      }
-    }
-
     const supabase = createClient();
 
     const syncUserSession = async () => {
       try {
+        // Use getSession() - reads from local cookie cache (fast, no extra network call)
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          // Fetch profile from database to get real role and name
+          // Try to get role from existing localStorage first
+          const cachedRole = localStorage.getItem("anjem_role");
+          if (cachedRole) {
+            setRole(cachedRole as any);
+            // Fetch fresh profile in background to update name/role if changed
+            supabase
+              .from("profiles")
+              .select("role, full_name")
+              .eq("id", session.user.id)
+              .maybeSingle()
+              .then(({ data: profile }) => {
+                if (profile) {
+                  const resolvedRole = profile.role || cachedRole;
+                  const resolvedName = profile.full_name || session.user!.user_metadata?.full_name || session.user!.email?.split("@")[0] || "User";
+                  setRole(resolvedRole as any);
+                  setUserName(resolvedName);
+                  localStorage.setItem("anjem_role", resolvedRole);
+                  localStorage.setItem("anjem_user", JSON.stringify({ id: session.user!.id, name: resolvedName, role: resolvedRole }));
+                }
+              });
+            return;
+          }
+
+          // No cached role - fetch profile once
           const { data: profile } = await supabase
             .from("profiles")
             .select("role, full_name")
@@ -76,7 +96,7 @@ export default function Navbar() {
             session.user.email?.split("@")[0] ||
             "User";
 
-          setRole(resolvedRole);
+          setRole(resolvedRole as any);
           setUserName(resolvedName);
 
           if (typeof window !== "undefined") {
@@ -92,7 +112,7 @@ export default function Navbar() {
         // Fallback silently if offline or network error
       }
 
-      // If no Supabase session, reset
+      // If no session, reset only if no cached role
       if (typeof window !== "undefined") {
         const hasSavedRole = localStorage.getItem("anjem_role");
         if (!hasSavedRole) {

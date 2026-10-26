@@ -122,18 +122,30 @@ export default function PesanPage() {
 
     async function initPage() {
       try {
-        // Check auth session first
-        const { data: { user } } = await supabase.auth.getUser();
+        // Use getSession() first - reads from local cache (instant, no network)
+        const { data: { session } } = await supabase.auth.getSession();
+        const user = session?.user;
 
         if (!user) {
-          // Redirect to register/login if not authenticated
+          // No cached session - redirect immediately
           router.replace("/daftar?redirect=/pesan");
           return;
         }
 
         setUserId(user.id);
 
-        // Parallel: fetch profile + services + fare_zones + popular_routes
+        // Pre-fill from user_metadata immediately (zero network cost)
+        if (user.user_metadata?.full_name) {
+          setCustomerName(user.user_metadata.full_name as string);
+        }
+        if (user.user_metadata?.phone) {
+          setCustomerPhone(user.user_metadata.phone as string);
+        }
+
+        // Mark auth as done immediately so UI renders without waiting for DB
+        setAuthLoading(false);
+
+        // Parallel: fetch profile + services + fare_zones + popular_routes in background
         const [
           { data: profile },
           { data: sData },
@@ -146,24 +158,15 @@ export default function PesanPage() {
           supabase.from("popular_routes").select("*").eq("is_active", true).order("name"),
         ]);
 
-        // Set user data from profile
-        if (profile?.full_name) {
-          setCustomerName(profile.full_name);
-        } else if (user.user_metadata?.full_name) {
-          setCustomerName(user.user_metadata.full_name as string);
-        }
-        if (profile?.phone) {
-          setCustomerPhone(profile.phone);
-        } else if (user.user_metadata?.phone) {
-          setCustomerPhone(user.user_metadata.phone as string);
-        }
+        // Update with DB profile data if available
+        if (profile?.full_name) setCustomerName(profile.full_name);
+        if (profile?.phone) setCustomerPhone(profile.phone);
 
         if (sData && sData.length > 0) setServices(sData);
         if (zData && zData.length > 0) setFareZones(zData);
         if (rData && rData.length > 0) setPopularRoutes(rData);
       } catch (err) {
         console.error("Error initializing order page:", err);
-      } finally {
         setAuthLoading(false);
       }
     }
@@ -285,21 +288,7 @@ export default function PesanPage() {
     }
   };
 
-  // Show loading spinner while checking auth
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex flex-col bg-slate-50">
-        <Navbar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <Loader2 size={40} className="animate-spin text-blue-600 mx-auto" />
-            <p className="text-slate-500 text-sm font-medium">Memeriksa sesi login...</p>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
+  // Auth check done instantly via session cache - no blocking screen needed
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
