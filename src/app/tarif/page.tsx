@@ -89,18 +89,18 @@ export default async function TarifPage() {
                   />
 
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400 leading-snug">
                         {zone.name}
                       </span>
                       <span
-                        className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                        className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shrink-0"
                         style={{
                           backgroundColor: `${zone.color || "#3b82f6"}15`,
                           color: zone.color || "#3b82f6",
                         }}
                       >
-                        {zone.max_km ? `${zone.min_km} – ${zone.max_km} km` : `> ${zone.min_km} km`}
+                        {zone.max_km !== null ? `${zone.min_km} – ${zone.max_km} km` : `> ${zone.min_km} km`}
                       </span>
                     </div>
 
