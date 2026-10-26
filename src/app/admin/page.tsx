@@ -1137,9 +1137,9 @@ export default function AdminDashboardPage() {
           </div>
 
           {/* Stat Overview Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 mb-8">
-            {/* Card 1: Penghasilan — menjumlahkan real penghasilan sesuai filter */}
-            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 sm:col-span-1 min-w-0 transition-all ${
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
+            {/* Card 1: Penghasilan — diberi porsi 2 kolom agar leluasa untuk tombol periode & angka */}
+            <div className={`bg-white p-4 rounded-2xl border shadow-sm flex flex-col justify-between col-span-2 min-w-0 transition-all ${
               dateRangeFilter ? "border-emerald-300 ring-1 ring-emerald-100" : "border-slate-200"
             }`}>
               <div>
